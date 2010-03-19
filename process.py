@@ -22,7 +22,7 @@ def buildNameDict():
             nameDictionary[field_prefix % 'pk'] = meta.pk.column
             
             for field in meta.fields:
-                nameDictionary[field_prefix % field.attname] = \
+                nameDictionary[field_prefix % field.name] = \
                     quote(field.column)
     
     return nameDictionary
