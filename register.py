@@ -18,10 +18,8 @@ argumentParser = re.compile(argumentString, re.DOTALL)
 methodParser = re.compile(r'CREATE\s+PROCEDURE\s+(?P<name>[\w_]+)\s+\(\s*(?P<arguments>.*)\)[^\)]*BEGIN', re.DOTALL) 
 
 class StoredProcedure():
-    def __init__(self, file_name, name = None, arguments = None, results = False, flatten = True):
-        fileHandler = codecs.open(file_name, 'r', 'utf-8')
-        
-        self.raw_sql = fileHandler.read()
+    def __init__(self, filename, name = None, arguments = None, results = False, flatten = True):
+        self.raw_sql = self.readProcedure(filename)
         
         self._flatten = flatten
         argumentContent = None
@@ -52,6 +50,14 @@ class StoredProcedure():
         # Connect to syncdb
         self._hasSynced = False
         post_syncdb.connect(self.postsync)
+        
+    def readProcedure(self, filename):
+        try:
+            fileHandler = codecs.open(filename, 'r', 'utf-8')
+        except IOError as exp:
+            raise FileDoesNotWorkException(exp)
+        
+        return fileHandler.read()
         
     def postsync(self, sender, **kwargs):
         # Make sure that this is called only once.
@@ -238,7 +244,7 @@ class IncorrectNumberOfArgumentsException(ProcedureExecutionException):
                 ,   self.operational_error
             )
     
-class ProcedureCreationExceptio(StoredProcedureException):
+class ProcedureCreationException(StoredProcedureException):
     def __init__(self, operational_error):
         self.operational_error = operational_error
     
@@ -252,6 +258,13 @@ class ProcedureNotParsableException(StoredProcedureException):
 class ArgumentsIrretrievableException(ProcedureNotParsableException):
     def __unicode__(self):
         return 'The arguments of the stored procedure could not be parsed'
+
+class FileDoesNotWorkException(StoredProcedureException):
+    def __init__(self, error):
+        self.error = error
+    
+    def __unicode__(self):
+        return 'Unable to open desired file, raised %s' % self.error
 
 class InitializationException(StoredProcedureException):
     def __init__(self, field_name, field_types, value):
