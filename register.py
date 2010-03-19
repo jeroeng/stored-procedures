@@ -4,7 +4,7 @@ from django.db.models.signals import post_syncdb
 
 import codecs, itertools, re, functools
 
-from _mysql import OperationalError
+from _mysql import OperationalError, Warning
 
 """
 from demoapp.models import *
@@ -64,6 +64,8 @@ class StoredProcedure():
         if self._hasSynced:
             return
         
+        verbosity = kwargs['verbosity']
+        
         self._hasSynced = True
         
         # Process SQL
@@ -73,9 +75,9 @@ class StoredProcedure():
             }
         self.sql = self.render(renderContext)
         
-        self.send_to_database()
+        self.send_to_database(verbosity)
     
-    def send_to_database(self):
+    def send_to_database(self, verbosity):
         cursor = connection.cursor()
         
         # Try to delete the procedure, if it exists
@@ -83,12 +85,22 @@ class StoredProcedure():
             cursor.execute('DROP PROCEDURE IF EXISTS %s' % connection.ops.quote_name(self.name))
         except OperationalError as exp:
             raise ProcedureCreationException(exp)
+        except Warning as exp:
+            # Warnings do not really matter
+            if verbosity >= 2:
+                print 'Warning raising while deleting stored procedure %s:\n\t%s' %\
+                    (self.name, exp)
         
         # Try to insert the procedure
         try:
             cursor.execute(self.sql)
         except OperationalError as exp:
             raise ProcedureCreationException(exp)
+        except Warning as exp:
+            # Warnings do not really matter
+            if verbosity >= 2:
+                print 'Warning raising while creating stored procedure %s:\n\t%s' %\
+                    (self.name, exp)
         
         cursor.close()
         
