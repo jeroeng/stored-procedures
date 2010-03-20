@@ -18,9 +18,10 @@ argumentParser = re.compile(argumentString, re.DOTALL)
 methodParser = re.compile(r'CREATE\s+PROCEDURE\s+(?P<name>[\w_]+)\s*\(\s*(?P<arguments>.*)\)[^\)]*BEGIN', re.DOTALL) 
 
 class StoredProcedure():
-    def __init__(self, filename, name = None, arguments = None, results = False, flatten = True):
+    def __init__(self, filename, name = None, arguments = None, results = False, flatten = True, raise_warnings = True):
         self.raw_sql = self.readProcedure(filename)
         
+        self._raise_warnings = raise_warnings
         self._flatten = flatten
         argumentContent = None
         
@@ -121,7 +122,8 @@ class StoredProcedure():
                             connection.ops.quote_name(self.name)
                         ,   ','.join('%s' for _ in xrange(0, self.argCount))
                     )
-                ,   list(map(str,args)))
+                ,   list(args)
+                )
         except OperationalError as exp:
             # Something went wrong, find out what
             code, message = exp.args
@@ -133,6 +135,10 @@ class StoredProcedure():
                 raise IncorrectNumberOfArgumentsException(exp, self.arguments)
             else:
                 # Some other error occurred
+                raise ProcedureExecutionException(exp)
+        except Warning as exp:
+            # A warning was raised, raise it whenever the user wants
+            if self._raise_warnings:
                 raise ProcedureExecutionException(exp)
         
         if self.hasResults:
