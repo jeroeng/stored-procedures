@@ -135,7 +135,7 @@ class StoredProcedure():
         
         if self.hasResults:
             # There are some results to be fetched
-            result = cursor.fetchall()
+            results = cursor.fetchall()
 
             # if so requested, return only the first set of results
             if self._flatten:
