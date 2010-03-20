@@ -133,11 +133,12 @@ class StoredProcedure():
                 raise IncorrectNumberOfArgumentsException(exp, self.arguments)
             
         
-        if not self.numberOfResults == 0:
+        if self.hasResults:
             # There are some results to be fetched
             result = cursor.fetchall()
-            
-            if len(results) == 1 and self._flatten:
+
+            # if so requested, return only the first set of results
+            if self._flatten:
                 return results[0]
             
             return results
