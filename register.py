@@ -121,7 +121,7 @@ class StoredProcedure():
                             connection.ops.quote_name(self.name)
                         ,   ','.join('%s' for _ in xrange(0, self.argCount))
                     )
-                ,   list(args))
+                ,   list(map(str,args)))
         except OperationalError as exp:
             # Something went wrong, find out what
             code, message = exp.args
@@ -131,7 +131,9 @@ class StoredProcedure():
             elif code == 1318:
                 # Incorrect number of argument, the argument list must be incorrect
                 raise IncorrectNumberOfArgumentsException(exp, self.arguments)
-            
+            else:
+                # Some other error occurred
+                raise ProcedureExecutionException(exp)
         
         if self.hasResults:
             # There are some results to be fetched
