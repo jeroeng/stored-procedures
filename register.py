@@ -15,7 +15,7 @@ IN_OUT_STRING  = '(IN)|(OUT)|(INOUT)'
 argumentString = r'(?P<inout>' + IN_OUT_STRING + ')\s*(?P<name>[\w_]+)\s+(?P<type>.+?(?=(,\s*' + IN_OUT_STRING + ')|$))'
 argumentParser = re.compile(argumentString, re.DOTALL)
 
-methodParser = re.compile(r'CREATE\s+PROCEDURE\s+(?P<name>[\w_]+)\s+\(\s*(?P<arguments>.*)\)[^\)]*BEGIN', re.DOTALL) 
+methodParser = re.compile(r'CREATE\s+PROCEDURE\s+(?P<name>[\w_]+)\s*\(\s*(?P<arguments>.*)\)[^\)]*BEGIN', re.DOTALL) 
 
 class StoredProcedure():
     def __init__(self, filename, name = None, arguments = None, results = False, flatten = True):
