@@ -174,7 +174,10 @@ class StoredProcedure():
         sqlTemplate = Template(self.raw_sql)
         preprocessed_sql = sqlTemplate.render(Context(renderContext))
         
-        return process_custom_sql(preprocessed_sql)
+        try:
+            return process_custom_sql(preprocessed_sql)
+        except KeyError as exp:
+            raise NameNotKnownException(procedure = self, exp = exp)
     
     def _match_procedure(self):
         match = methodParser.match(self.raw_sql)
@@ -238,6 +241,9 @@ class StoredProcedure():
             return (value for _, value in shuffled)
         
         self._shuffle_arguments = shuffle_argument
+    
+    def __unicode__(self):
+        return unicode(self.name)
 
 class StoredProcedureException(Exception):
     def __str__(self):
@@ -271,6 +277,14 @@ class ProcedureCreationException(StoredProcedureException):
     
     def __unicode__(self):
         return unicode(self.operational_error)
+        
+class NameNotKnownException(StoredProcedureException):
+    def __init__(self, procedure, exp):
+        self.procedure = procedure
+        self.exp = exp
+    
+    def __unicode__(self):
+        return 'Unkown key %s in rendering %s' % (self.exp.args[0], self.procedure)
 
 class ProcedureNotParsableException(StoredProcedureException):
     def __unicode__(self):
