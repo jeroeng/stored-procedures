@@ -38,15 +38,10 @@ class ProcedureDoesNotExistException(ProcedureExecutionException):
     pass
     
 class IncorrectNumberOfArgumentsException(ProcedureExecutionException):
-    def __init__(self, **kwargs):
-        """The argument `arguments` is required."""
-        self.arguments = kwargs.pop('arguments')
-        super(IncorrectNumberOfArgumentsException, self).__init__(**kwargs)
-    
     def description(self):
         return 'We know of the arguments %s, but upon calling the procedure with these arguments filled in, the error "%s" occurred. Please check whether the argument list is correct.' % \
             (
-                    ','.join(self.arguments)
+                    ','.join(self.procedure.arguments)
                 ,   self.operational_error
             )
     
@@ -104,7 +99,11 @@ class InvalidArgument(StoredProcedureException):
         self.argument = kwargs.pop('argument')
     
     def description(self):
-        return 'The argument %s is invalid' % self.argument
+        return 'The argument %s is was not expected. Perhaps you meant one of %s?' % \
+            (   
+                    self.argument
+                ,   ','.join(self.procedure.arguments)
+            )
 
 class InsufficientArguments(StoredProcedureException):
     def __init__(self, **kwargs):

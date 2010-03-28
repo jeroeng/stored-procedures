@@ -16,7 +16,8 @@ methodParser = re.compile(r'CREATE\s+PROCEDURE\s+(?P<name>[\w_]+)\s*\(\s*(?P<arg
 
 class StoredProcedure():
     def __init__(self, filename, name = None, arguments = None, results = False, flatten = True, raise_warnings = True):
-        self.raw_sql = self.readProcedure(filename)
+        self._filename = filename
+        self.raw_sql = self.readProcedure()
         
         self._raise_warnings = raise_warnings
         self._flatten = flatten
@@ -29,31 +30,49 @@ class StoredProcedure():
         elif isinstance(name, unicode):
             self._name = name
         else:
-            raise InitializationException('name', (None, str, unicode), name) 
+            raise InitializationException(
+                    procedure   = self
+                ,   field_name  = 'name'
+                ,   field_types = (None, str, unicode)
+                ,   field_value = name
+            ) 
 
         if arguments is None:
             self._generate_arguments(argumentContent)
         elif isinstance(arguments, list):
            self._generate_shuffle_arguments(arguments)
         else:
-            raise InitializationException('arguments', (None, list), arguments)
+            raise InitializationException(
+                    procedure   = self
+                ,   field_name  = 'arguments'
+                ,   field_types = (None, list)
+                ,   field_value = arguments
+            ) 
             
         if isinstance(results, bool):
             self._hasResults = results
         elif results is None:
             self._hasResults = False
         else:
-            raise InitializationException('results', (None, bool), results)
+            raise InitializationException(
+                    procedure   = self
+                ,   field_name  = 'results'
+                ,   field_types = (None, bool)
+                ,   field_value = results
+            ) 
 
         # Connect to syncdb
         self._hasSynced = False
         post_syncdb.connect(self.postsync)
         
-    def readProcedure(self, filename):
+    def readProcedure(self):
         try:
-            fileHandler = codecs.open(filename, 'r', 'utf-8')
+            fileHandler = codecs.open(self.filename, 'r', 'utf-8')
         except IOError as exp:
-            raise FileDoesNotWorkException(exp)
+            raise FileDoesNotWorkException(
+                procedure  = self,
+                file_error = exp
+            )
         
         return fileHandler.read()
         
@@ -82,23 +101,29 @@ class StoredProcedure():
         try:
             cursor.execute('DROP PROCEDURE IF EXISTS %s' % connection.ops.quote_name(self.name))
         except OperationalError as exp:
-            raise ProcedureCreationException(exp)
+            raise ProcedureCreationException(
+                    procedure         = self
+                ,   operational_error = exp
+            )
         except Warning as exp:
             # Warnings do not really matter
             if verbosity >= 2:
-                print 'Warning raising while deleting stored procedure %s:\n\t%s' %\
-                    (self.name, exp)
+                print 'Warning raising while deleting stored procedure %s(%s):\n\t%s' %\
+                    (self.name, self.filename, exp)
         
         # Try to insert the procedure
         try:
             cursor.execute(self.sql)
         except OperationalError as exp:
-            raise ProcedureCreationException(exp)
+            raise ProcedureCreationException(
+                    procedure         = self
+                ,   operational_error = exp
+            )
         except Warning as exp:
             # Warnings do not really matter
             if verbosity >= 2:
-                print 'Warning raising while creating stored procedure %s:\n\t%s' %\
-                    (self.name, exp)
+                print 'Warning raising while creating stored procedure %s(%s):\n\t%s' %\
+                    (self.name, self.filename, exp)
         
         cursor.close()
         
@@ -126,17 +151,29 @@ class StoredProcedure():
             code, message = exp.args
             if code == 1305:
                 # Procedure does not exist
-                raise ProcedureDoesNotExistException(exp)
+                raise ProcedureDoesNotExistException(
+                        procedure         = self
+                    ,   operational_error = exp
+                )
             elif code == 1318:
                 # Incorrect number of argument, the argument list must be incorrect
-                raise IncorrectNumberOfArgumentsException(exp, self.arguments)
+                raise IncorrectNumberOfArgumentsException(
+                        procedure          = self
+                    ,   operational_eror   = exp
+                )
             else:
                 # Some other error occurred
-                raise ProcedureExecutionException(exp)
-        except Warning as exp:
+                raise ProcedureExecutionException(
+                        procedure        = self
+                    ,   operational_eror = exp
+                )
+        except Warning as warning:
             # A warning was raised, raise it whenever the user wants
             if self._raise_warnings:
-                raise ProcedureExecutionException(exp)
+                raise ProcedureExecutionException(
+                        procedure        = self
+                    ,   operational_eror = warning
+                )
         
         if self.hasResults:
             # There are some results to be fetched
@@ -152,6 +189,11 @@ class StoredProcedure():
     name = property(
                 fget = lambda self: self._name
             ,   doc  = 'Name of the stored procedure'
+        )
+    
+    filename = property(
+                fget = lambda self: self._filename
+            ,   doc  = 'Filename of the stored procedure'
         )
     
     arguments = property(
@@ -174,13 +216,18 @@ class StoredProcedure():
         try:
             return process_custom_sql(preprocessed_sql)
         except KeyError as exp:
-            raise NameNotKnownException(procedure = self, exp = exp)
+            #raise NameNotKnownException(
+            #        procedure = self
+            #    ,   exp = exp
+            #)
     
     def _match_procedure(self):
         match = methodParser.match(self.raw_sql)
         
         if match is None:
-            raise ProcedureNotParsableException()
+            raise ProcedureNotParsableException(
+                procedure = self
+            )
         
         return match    
     
@@ -224,7 +271,10 @@ class StoredProcedure():
             try:
                 pos = decoratedArguments[arg]
             except KeyError:
-                raise InvalidArgument(arg)
+                raise InvalidArgument(
+                        procedure = self
+                    ,   argument  = arg
+                )
             
             return pos
         
@@ -233,7 +283,10 @@ class StoredProcedure():
             shuffled = sorted(argValues.iteritems(), key = key)
             
             if len(shuffled) < argCount:
-                raise InsufficientArguments(argValues)
+                raise InsufficientArguments(
+                        procedure          = self
+                    ,   provided_arguments = argValues
+                )
             
             return (value for _, value in shuffled)
         
