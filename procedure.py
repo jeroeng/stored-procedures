@@ -233,7 +233,7 @@ class StoredProcedure():
             shuffled = sorted(argValues.iteritems(), key = key)
             
             if len(shuffled) < argCount:
-                raise InsufficientArguments(argValues, arguments)
+                raise InsufficientArguments(argValues)
             
             return (value for _, value in shuffled)
         
