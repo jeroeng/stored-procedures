@@ -1,12 +1,13 @@
 from django.db import connection
 from django.template import Template, Context
-from django.db.models.signals import post_syncdb
+from django.db.utils import DatabaseError
 
 from _mysql import OperationalError, Warning
 
 import codecs, itertools, re, functools
 
 from exceptions import *
+from library import registerProcedure
 
 IN_OUT_STRING  = '(IN)|(OUT)|(INOUT)'
 argumentString = r'(?P<inout>' + IN_OUT_STRING + ')\s*(?P<name>[\w_]+)\s+(?P<type>.+?(?=(,\s*' + IN_OUT_STRING + ')|$))'
@@ -15,14 +16,29 @@ argumentParser = re.compile(argumentString, re.DOTALL)
 methodParser = re.compile(r'CREATE\s+PROCEDURE\s+(?P<name>[\w_]+)\s*\(\s*(?P<arguments>.*)\)[^\)]*BEGIN', re.DOTALL) 
 
 class StoredProcedure():
-    def __init__(self, filename, name = None, arguments = None, results = False, flatten = True, raise_warnings = True):
+    def __init__(
+                self
+            ,   filename
+            ,   name            = None
+            ,   arguments       = None
+            ,   results         = False
+            ,   flatten         = True
+            ,   raise_warnings  = True
+            ,   context         = None
+    ):
+        # Save settings
         self._filename = filename
-        self.raw_sql = self.readProcedure()
-        
         self._raise_warnings = raise_warnings
         self._flatten = flatten
+        
+        self.raw_sql = self.readProcedure()
+    
+        # When we are forced to check for the procedures name, this already
+        # gives us the argument-data needed to process the arguments, so save
+        # this in case we need it later on
         argumentContent = None
         
+        # Determine name of the procedure
         if name is None:
             argumentContent = self._generate_name()
         elif isinstance(name, str):
@@ -37,6 +53,7 @@ class StoredProcedure():
                 ,   field_value = name
             ) 
 
+        # Determine the procedures arguments
         if arguments is None:
             self._generate_arguments(argumentContent)
         elif isinstance(arguments, list):
@@ -49,6 +66,7 @@ class StoredProcedure():
                 ,   field_value = arguments
             ) 
             
+        # Determine whether the procedure should return any results
         if isinstance(results, bool):
             self._hasResults = results
         elif results is None:
@@ -60,12 +78,26 @@ class StoredProcedure():
                 ,   field_types = (None, bool)
                 ,   field_value = results
             ) 
+            
+        # Determine additional context for the rendering of the procedure
+        if isinstance(context, dict):
+            self._context = context
+        elif context is None:
+            self._context = None
+        else:
+            raise InitializationException(
+                    procedure   = self
+                ,   field_name  = 'context'
+                ,   field_types = (None, dict)
+                ,   field_value = context
+            ) 
 
-        # Connect to syncdb
-        self._hasSynced = False
-        post_syncdb.connect(self.postsync)
+        # Register the procedure
+        registerProcedure(self)
         
     def readProcedure(self):
+        """Read the procedure from the given location. The procedure is assumed
+        to be stored in utf-8 encoding.""" 
         try:
             fileHandler = codecs.open(self.filename, 'r', 'utf-8')
         except IOError as exp:
@@ -76,22 +108,28 @@ class StoredProcedure():
         
         return fileHandler.read()
         
-    def postsync(self, sender, **kwargs):
-        # Make sure that this is called only once.
-        if self._hasSynced:
-            return
-        
-        verbosity = kwargs['verbosity']
-        
-        self._hasSynced = True
-        
-        # Process SQL
+    def resetProcedure(self, library, verbosity = 2):
+        # Determine context of the procedure
         renderContext = \
             {
                     'name'      :   connection.ops.quote_name(self.name)
             }
-        self.sql = self.render(renderContext)
         
+        # Fill in global context
+        if not self._context is None:
+            renderContext.update(self._context)
+        
+        # Render SQL
+        sqlTemplate = Template(self.raw_sql)
+        preprocessed_sql = sqlTemplate.render(Context(renderContext))
+        
+        # Fill in actual names
+        self.sql = library.replaceNames(
+                self.raw_sql
+            ,   functools.partial(ProcedurePreparationException, procedure = self)
+        )
+
+        # Store the procedure in the database
         self.send_to_database(verbosity)
     
     def send_to_database(self, verbosity):
@@ -100,6 +138,11 @@ class StoredProcedure():
         # Try to delete the procedure, if it exists
         try:
             cursor.execute('DROP PROCEDURE IF EXISTS %s' % connection.ops.quote_name(self.name))
+        except DatabaseError as exp:
+            raise ProcedureCreationException(
+                    procedure         = self
+                ,   operational_error = exp
+            )
         except OperationalError as exp:
             raise ProcedureCreationException(
                     procedure         = self
@@ -114,6 +157,11 @@ class StoredProcedure():
         # Try to insert the procedure
         try:
             cursor.execute(self.sql)
+        except DatabaseError as exp:
+            raise ProcedureCreationException(
+                    procedure         = self
+                ,   operational_error = exp
+            )
         except OperationalError as exp:
             raise ProcedureCreationException(
                     procedure         = self
@@ -138,6 +186,7 @@ class StoredProcedure():
     
         # Todo, wrap try-catch around this
         cursor = connection.cursor()
+        executed = True
         try:
             cursor.execute('CALL %s (%s)' % \
                     (
@@ -146,7 +195,19 @@ class StoredProcedure():
                     )
                 ,   list(args)
                 )
+        except DatabaseError as exp:
+            executed = False
         except OperationalError as exp:
+            executed = False
+        except Warning as warning:
+            # A warning was raised, raise it whenever the user wants
+            if self._raise_warnings:
+                raise ProcedureExecutionException(
+                        procedure        = self
+                    ,   operational_eror = warning
+                )
+        
+        if not executed:
             # Something went wrong, find out what
             code, message = exp.args
             if code == 1305:
@@ -166,13 +227,6 @@ class StoredProcedure():
                 raise ProcedureExecutionException(
                         procedure        = self
                     ,   operational_eror = exp
-                )
-        except Warning as warning:
-            # A warning was raised, raise it whenever the user wants
-            if self._raise_warnings:
-                raise ProcedureExecutionException(
-                        procedure        = self
-                    ,   operational_eror = warning
                 )
         
         if self.hasResults:
@@ -205,22 +259,7 @@ class StoredProcedure():
                 fget = lambda self: self._hasResults
             ,   doc  = 'Whether the stored procedures requires a fetch after execution'
         )
-        
-    def render(self, renderContext):
-        """Render the SQL as provided with variabled into true SQL"""
-        from context import process_custom_sql
 
-        sqlTemplate = Template(self.raw_sql)
-        preprocessed_sql = sqlTemplate.render(Context(renderContext))
-        
-        try:
-            return process_custom_sql(preprocessed_sql)
-        except KeyError as exp:
-            #raise NameNotKnownException(
-            #        procedure = self
-            #    ,   exp = exp
-            #)
-    
     def _match_procedure(self):
         match = methodParser.match(self.raw_sql)
         
@@ -293,4 +332,7 @@ class StoredProcedure():
         self._shuffle_arguments = shuffle_argument
     
     def __unicode__(self):
-        return unicode(self.name)
+        return u'%s (%s)' % (self.name, self.filename)
+    
+    def __str__(self):
+        return unicode(self).encode('ascii', 'replace')

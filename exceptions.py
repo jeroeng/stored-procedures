@@ -14,14 +14,13 @@ class StoredProcedureException(Exception):
         return None
 
     def __unicode__(self):
-        return u'Exception in stored procedure %s (%s)' % 
-            (
-                    self.procedure.name
-                ,   self.procedure.filename
-            )  + ( '' is None else ': ' + self.description if self.description)
+        description = self.description()
+        
+        return 'Exception in stored procedure %s' % self.procedure + (
+            '' if description is None else ': ' + description)
 
     def __str__(self):
-        return unicode(self).encode('ascii', 'replace')
+        return unicode(self)
 
 class ProcedureExecutionException(StoredProcedureException):
     """Exception that occurs during the execution of a stored procedure."""
@@ -45,13 +44,23 @@ class IncorrectNumberOfArgumentsException(ProcedureExecutionException):
                 ,   self.operational_error
             )
     
+class ProcedurePreparationException(StoredProcedureException):
+    def __init__(self, **kwargs):
+        """The argument `key` is required, contains the key which could
+        not be found."""
+        self.key = kwargs.pop('key')
+        super(ProcedurePreparationException, self).__init__(**kwargs)
+        
+    def description(self):
+        return u'Key "%s" could not be found' % self.key
+
 class ProcedureCreationException(StoredProcedureException):
     """Exception that occurs during the creation of a stored procedure."""
-    def __init__(self, operational_error):
+    def __init__(self, **kwargs):
         """The argument `operational_error` is required, this should contain
         an OperationalError."""
         self.operational_error = kwargs.pop('operational_error')
-        super(ProcedureExecutionException, self).init(**kwargs)
+        super(ProcedureCreationException, self).__init__(**kwargs)
     
     def description(self):
         return unicode(self.operational_error) 
@@ -84,6 +93,7 @@ class InitializationException(StoredProcedureException):
         self.field_name  = kwargs.pop('field_name')
         self.field_types = kwargs.pop('field_types')
         self.value       = kwargs.pop('value')
+        super(InitializationException, self).__init__(**kwargs)
     
     def description(self):
         return  'Invalid argument given to initialization, %s should have been of type %s, the provided value %s was of type %s' % \
@@ -107,7 +117,7 @@ class InvalidArgument(StoredProcedureException):
 
 class InsufficientArguments(StoredProcedureException):
     def __init__(self, **kwargs):
-        provided_arguments = frozenset(arg[0] for arg in kwargs.pop('provided_arguments')
+        provided_arguments = frozenset(arg[0] for arg in kwargs.pop('provided_arguments'))
         super(InsufficientArguments, self).__init__(**kwargs)
         self.omitted = frozenset(self.procedure.arguments) - provided_arguments
     
