@@ -9,13 +9,13 @@ class StoredProcedureException(Exception):
     procedure = property(lambda self: self._procedure)
 
     def description(self):
-        """"Subclasses should override this method to provide a more detailled 
+        """"Subclasses should override this method to provide a more detailled
         description of the exception that occurred."""
         return None
 
     def __unicode__(self):
         description = self.description()
-        
+
         return 'Exception in stored procedure %s' % self.procedure + (
             '' if description is None else ': ' + description)
 
@@ -28,14 +28,14 @@ class ProcedureExecutionException(StoredProcedureException):
         """The argument `operational_error` is required, this should contain
         an OperationalError."""
         self.operational_error = kwargs.pop('operational_error')
-        super(ProcedureExecutionException, self).init(**kwargs)
-    
+        super(ProcedureExecutionException, self).__init__(**kwargs)
+
     def description(self):
-        return unicode(self.operational_error) 
+        return unicode(self.operational_error)
 
 class ProcedureDoesNotExistException(ProcedureExecutionException):
     pass
-    
+
 class IncorrectNumberOfArgumentsException(ProcedureExecutionException):
     def description(self):
         return 'We know of the arguments %s, but upon calling the procedure with these arguments filled in, the error "%s" occurred. Please check whether the argument list is correct.' % \
@@ -43,14 +43,14 @@ class IncorrectNumberOfArgumentsException(ProcedureExecutionException):
                     ','.join(self.procedure.arguments)
                 ,   self.operational_error
             )
-    
+
 class ProcedurePreparationException(StoredProcedureException):
     def __init__(self, **kwargs):
         """The argument `key` is required, contains the key which could
         not be found."""
         self.key = kwargs.pop('key')
         super(ProcedurePreparationException, self).__init__(**kwargs)
-        
+
     def description(self):
         return u'Key "%s" could not be found' % self.key
 
@@ -61,9 +61,9 @@ class ProcedureCreationException(StoredProcedureException):
         an OperationalError."""
         self.operational_error = kwargs.pop('operational_error')
         super(ProcedureCreationException, self).__init__(**kwargs)
-    
+
     def description(self):
-        return unicode(self.operational_error) 
+        return unicode(self.operational_error)
 
 class ProcedureConfigurationException(StoredProcedureException, ImproperlyConfigured):
     """Exception that occurs during the initialization of a stored procedure.
@@ -83,7 +83,7 @@ class FileDoesNotWorkException(ProcedureConfigurationException):
     def __init__(self, **kwargs):
         self.file_error = kwargs.pop('file_error')
         super(FileDoesNotWorkException, self).__init__(**kwargs)
-    
+
     def description(self):
         return 'Unable to open desired file, raised %s' % self.file_error
 
@@ -94,7 +94,7 @@ class InitializationException(StoredProcedureException):
         self.field_types = kwargs.pop('field_types')
         self.value       = kwargs.pop('value')
         super(InitializationException, self).__init__(**kwargs)
-    
+
     def description(self):
         return  'Invalid argument given to initialization, %s should have been of type %s, the provided value %s was of type %s' % \
             (
@@ -107,10 +107,10 @@ class InitializationException(StoredProcedureException):
 class InvalidArgument(StoredProcedureException):
     def __init__(self, **kwargs):
         self.argument = kwargs.pop('argument')
-    
+
     def description(self):
         return 'The argument %s is was not expected. Perhaps you meant one of %s?' % \
-            (   
+            (
                     self.argument
                 ,   ','.join(self.procedure.arguments)
             )
@@ -120,7 +120,8 @@ class InsufficientArguments(StoredProcedureException):
         provided_arguments = frozenset(arg[0] for arg in kwargs.pop('provided_arguments'))
         super(InsufficientArguments, self).__init__(**kwargs)
         self.omitted = frozenset(self.procedure.arguments) - provided_arguments
-    
+
     def description(self):
         return 'Insufficient amount of arguments, you omitted to provide %s.' % \
             ','.join(self.omitted)
+
