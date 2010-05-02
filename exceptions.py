@@ -117,7 +117,7 @@ class InvalidArgument(StoredProcedureException):
 
 class InsufficientArguments(StoredProcedureException):
     def __init__(self, **kwargs):
-        provided_arguments = frozenset(arg[0] for arg in kwargs.pop('provided_arguments'))
+        provided_arguments = frozenset(kwargs.pop('provided_arguments'))
         super(InsufficientArguments, self).__init__(**kwargs)
         self.omitted = frozenset(self.procedure.arguments) - provided_arguments
 

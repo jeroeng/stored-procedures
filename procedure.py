@@ -324,7 +324,7 @@ class StoredProcedure():
             if len(shuffled) < argCount:
                 raise InsufficientArguments(
                         procedure          = self
-                    ,   provided_arguments = argValues
+                    ,   provided_arguments = argValues.keys()
                 )
 
             return (value for _, value in shuffled)
