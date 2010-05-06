@@ -1,6 +1,7 @@
 from django.db import connection
 from django.template import Template, Context
 from django.db.utils import DatabaseError
+from django.conf import settings
 
 from _mysql import OperationalError, Warning
 
@@ -98,8 +99,13 @@ class StoredProcedure():
     def readProcedure(self):
         """Read the procedure from the given location. The procedure is assumed
         to be stored in utf-8 encoding."""
+        if hasattr(settings, 'IN_SITE_ROOT'):
+        	name = settings.IN_SITE_ROOT(self.filename)
+        else:
+        	name = self.filename
+        
         try:
-            fileHandler = codecs.open(self.filename, 'r', 'utf-8')
+            fileHandler = codecs.open(name, 'r', 'utf-8')
         except IOError as exp:
             raise FileDoesNotWorkException(
                 procedure  = self,
