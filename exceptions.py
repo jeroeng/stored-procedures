@@ -14,7 +14,11 @@ class StoredProcedureException(Exception):
         return None
 
     def __unicode__(self):
-        description = self.description()
+        """Provided a nice description of the exception."""
+        try:
+            description = self.description()
+        except Exception as exp:
+            description = '[Error not properly rendered due to %s]' % exp
 
         return 'Exception in stored procedure %s' % self.procedure + (
             '' if description is None else ': ' + description)
@@ -107,9 +111,17 @@ class InitializationException(StoredProcedureException):
 class InvalidArgument(StoredProcedureException):
     def __init__(self, **kwargs):
         self.argument = kwargs.pop('argument')
+        super(InvalidArgument, self).__init__(**kwargs)
 
     def description(self):
-        return 'The argument %s is was not expected. Perhaps you meant one of %s?' % \
+        if len(self.procedure.arguments) == 1:
+            return 'This procedure only takes the argument %s, you provided %s' % \
+                (
+                        self.procedure.arguments[0]
+                    ,   self.argument
+                )
+
+        return 'The argument %s is was not expected. Perhaps you meant one of: %s?' % \
             (
                     self.argument
                 ,   ','.join(self.procedure.arguments)
