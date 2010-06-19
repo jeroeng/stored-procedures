@@ -2,7 +2,7 @@ from django.db import connection
 from django.template import Template, Context
 from django.db.utils import DatabaseError
 from django.conf import settings
-from _mysql import OperationalError, Warning
+from _mysql import OperationalError
 
 import codecs, itertools, re, functools, warnings
 
@@ -28,21 +28,25 @@ class StoredProcedure():
     ):
         """Make a wrapper for a stored procedure
 
-        This provides a wrapper for stored procedures. Given the location of a stored procedure, this wrapper can automatically infer its arguments and name. Consequently, one can call the wrapper as if it were a function, using these arguments as keyword arguments, resulting in calling the stored procedure.
+ This provides a wrapper for stored procedures. Given the location of a stored procedure, this wrapper can automatically infer its arguments and name. Consequently, one can call the wrapper as if it were a function, using these arguments as keyword arguments, resulting in calling the stored procedure. The file containing the procedure must be in the location as specified by filename. It is often useful to have code like
+    > import os.path, functools
+    > SITE_ROOT = os.path.realpath(os.path.dirname(__file__))
+    > IN_SITE_ROOT = functools.partial(os.path.join, SITE_ROOT)
+in your settings.py file in django. When IN_SITE_ROOT is available, it will be used to make the filename absolute.
 
-        By default, the stored procedure will be stored in the database (replacing any stored procedure with the same name) on a django-south migrate event.
+By default, the stored procedure will be stored in the database (replacing any stored procedure with the same name) on a django-south migrate event.
 
-        It is possible to refer to models and columns of models from within the stored procedure in the following sense. If in the application "shop" one has a model named "Stock", then writing [shop.Stock] in the file describing the stored procedure will yield a the database-name of the model Stock. If this model has a field "shelf", then [shop.Stock.shelf] will yield the field's database name. As a shortcut, one can also use [shop.Stock.pk] to refer to the primary key of Stock. All these names are escaped appropriately.
+It is possible to refer to models and columns of models from within the stored procedure in the following sense. If in the application "shop" one has a model named "Stock", then writing [shop.Stock] in the file describing the stored procedure will yield a the database-name of the model Stock. If this model has a field "shelf", then [shop.Stock.shelf] will yield the field's database name. As a shortcut, one can also use [shop.Stock.pk] to refer to the primary key of Stock. All these names are escaped appropriately.
 
-        Moreover, OperationalError:one can use django templating language in the stored procedure. The argument `context` is fed to this template.
+Moreover, one can use django templating language in the stored procedure. The argument `context` is fed to this template.
 
-        Keyword arguments:
-        filename        -- the file where the stored procedure's content is stored.
-        arguments       -- a list of the argument the procedure needs (inferred by default)
-        results         -- whether the procedure yields a resultset (default is false)
-        flatten         -- whether the resultset, whenever available, should be flattened to its first element, ueful when the procedure only returns one row (default True)
-        content         -- a context (dictionary or function which takes the stored procedure itself and yields a dictionary) for rendering the procedure (default is empty)
-        raise_warnings  -- whether warnings should be raised as an exception (default is false)"""
+Keyword arguments:
+    filename        -- the file where the stored procedure's content is stored.
+    arguments       -- a list of the argument the procedure needs (inferred by default)
+    results         -- whether the procedure yields a resultset (default is false)
+    flatten         -- whether the resultset, whenever available, should be flattened to its first element, ueful when the procedure only returns one row (default True)
+    content         -- a context (dictionary or function which takes the stored procedure itself and yields a dictionary) for rendering the procedure (default is empty)
+    raise_warnings  -- whether warnings should be raised as an exception (default is false)"""
         # Save settings
         self._filename = filename
         self._flatten = flatten
@@ -115,9 +119,9 @@ class StoredProcedure():
     def readProcedure(self):
         """Read the procedure from the given location. The procedure is assumed to be stored in utf-8 encoding."""
         if hasattr(settings, 'IN_SITE_ROOT'):
-        	name = settings.IN_SITE_ROOT(self.filename)
+            name = settings.IN_SITE_ROOT(self.filename)
         else:
-        	name = self.filename
+            name = self.filename
 
         try:
             fileHandler = codecs.open(name, 'r', 'utf-8')
@@ -129,7 +133,13 @@ class StoredProcedure():
 
         return fileHandler.read()
 
-    def resetProcedure(self, library, verbosity = 2):
+    def renderProcedure(self, library):
+        """Renders the stored procedure.
+
+Whenever the context given on initialization is dynamic, it is computed here. First, the SQL will be treated as a django-template with as context the given context and 'name' set to the (escaped) name of the stored procedure. Next, references to tables and columns will be replaced. This depends on the library in use, which carries information about which tables exist. The default library in library almost always suffices.
+
+Keyword arguments:
+    library -- the library that contains the table information"""
         # Determine context of the procedure
         renderContext = \
             {
@@ -162,10 +172,21 @@ class StoredProcedure():
             ,   functools.partial(ProcedureKeyException, procedure = self)
         )
 
+    def resetProcedure(self, library, verbosity = 2):
+        """Renders the procedure and stores it in the database. See renderProcedure and send_to_database for details."""
+        # Render the procedure
+        self.renderProcedure(library)
+
         # Store the procedure in the database
         self.send_to_database(verbosity)
 
     def send_to_database(self, verbosity):
+        """Store the stored procedure in the database.
+
+Note that we first try to delete the procedure, and then insert it. Take great care not to accidentally delete some other procedure which just happens to carry the same name, this is *not* prevented here.
+
+Keyword arguments:
+    verbosity   -- determines how verbose we will be. On verbosity 2, warnings are printed to the standard output (default is 2)"""
         cursor = connection.cursor()
 
         # Try to delete the procedure, if it exists
@@ -274,7 +295,7 @@ class StoredProcedure():
 
     call       = property(
                 fget  = lambda self: self._call
-            ,   doc   = 'The SQL code needed to call this stored procedure'
+            ,   doc   = 'The SQL code needed to call the stored procedure'
     )
 
     def _match_procedure(self):
@@ -299,6 +320,9 @@ class StoredProcedure():
         if argumentContent is None:
             argumentContent = self._match_procedure().group('arguments')
 
+        # The data gathered in argumentData is not fully used now, only the name
+        # is needed later on. In future versions, it might be useful to also use
+        # the type information.
         argumentData = []
 
         for match in argumentParser.finditer(argumentContent):
@@ -308,12 +332,14 @@ class StoredProcedure():
 
             argumentData.append((name, type, inout))
 
-        self._generate_shuffle_arguments(argumentData)
+        self._generate_shuffle_arguments(argumentData = argumentData)
 
-    def _generate_shuffle_arguments(self, arguments):
+    def _generate_shuffle_arguments(self, arguments = None, argumentData = None):
         """Generate a method for shuffling a dictionary whose keys match exactly the contents of arguments into the order as given by arguments."""
-        # First set the help of the call-method
-        self._arguments = [ name for (name, _, _) in arguments ]
+        # Generate the list of arguments. The user might have provided the arguments, in which case
+        # we inspect arguments , otherwise we inferred them and use argumentData.
+        arguments = self._arguments = [ name for (name, _, _) in argumentData] \
+            if arguments is None else arguments
         argCount = len(arguments)
 
         # Generate the SQL needed to call the procedure
@@ -325,7 +351,7 @@ class StoredProcedure():
             """Meant for internal use only, shuffles the arguments into correct order"""
             argumentValues = []
 
-            for (argName, argType, argInOut) in arguments:
+            for argName in arguments:
                 # Try to grab the argument
                 try:
                     value = argValues.pop(argName)
@@ -353,7 +379,7 @@ class StoredProcedure():
         self._shuffle_arguments = shuffle_argument
 
     def _generate_call(self, argCount):
-        """Generates the call to this procedure"""
+        """Generates the call to the procedure"""
         self._call = 'CALL %s (%s)' % \
             (
                     connection.ops.quote_name(self.name)

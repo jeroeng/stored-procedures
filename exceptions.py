@@ -24,7 +24,7 @@ class StoredProcedureException(Exception):
             '' if description is None else ': ' + description)
 
     def __str__(self):
-        return unicode(self)
+        return unicode(self).encode('utf8', 'replace')
 
 class ProcedureExecutionException(StoredProcedureException):
     """Exception that occurs during the execution of a stored procedure."""
@@ -153,6 +153,15 @@ class InsufficientArguments(StoredProcedureException):
         return 'Insufficient amount of arguments, you omitted to provide %s.' % \
             ','.join(self.omitted)
 
-def RawSQLException(Exception):
+class RawSQLException(Exception):
     """Generic exception related to raw sql"""
+    def __str__(self):
+        return unicode(self).encode('utf8', 'replace')
+
+class RawSQLKeyException(RawSQLException):
+    def __init__(self, key):
+        self.key = key
+
+    def __unicode__(self):
+        return 'Could not find key %s' % self.key
 
