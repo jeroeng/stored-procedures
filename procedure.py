@@ -2,10 +2,9 @@ from django.db import connection
 from django.template import Template, Context
 from django.db.utils import DatabaseError
 from django.conf import settings
-
 from _mysql import OperationalError, Warning
 
-import codecs, itertools, re, functools
+import codecs, itertools, re, functools, warnings
 
 from exceptions import *
 from library import registerProcedure
@@ -24,13 +23,30 @@ class StoredProcedure():
             ,   arguments       = None
             ,   results         = False
             ,   flatten         = True
-            ,   raise_warnings  = True
             ,   context         = None
+            ,   raise_warnings  = False
     ):
+        """Make a wrapper for a stored procedure
+
+        This provides a wrapper for stored procedures. Given the location of a stored procedure, this wrapper can automatically infer its arguments and name. Consequently, one can call the wrapper as if it were a function, using these arguments as keyword arguments, resulting in calling the stored procedure.
+
+        By default, the stored procedure will be stored in the database (replacing any stored procedure with the same name) on a django-south migrate event.
+
+        It is possible to refer to models and columns of models from within the stored procedure in the following sense. If in the application "shop" one has a model named "Stock", then writing [shop.Stock] in the file describing the stored procedure will yield a the database-name of the model Stock. If this model has a field "shelf", then [shop.Stock.shelf] will yield the field's database name. As a shortcut, one can also use [shop.Stock.pk] to refer to the primary key of Stock. All these names are escaped appropriately.
+
+        Moreover, OperationalError:one can use django templating language in the stored procedure. The argument `context` is fed to this template.
+
+        Keyword arguments:
+        filename        -- the file where the stored procedure's content is stored.
+        arguments       -- a list of the argument the procedure needs (inferred by default)
+        results         -- whether the procedure yields a resultset (default is false)
+        flatten         -- whether the resultset, whenever available, should be flattened to its first element, ueful when the procedure only returns one row (default True)
+        content         -- a context (dictionary or function which takes the stored procedure itself and yields a dictionary) for rendering the procedure (default is empty)
+        raise_warnings  -- whether warnings should be raised as an exception (default is false)"""
         # Save settings
         self._filename = filename
-        self._raise_warnings = raise_warnings
         self._flatten = flatten
+        self._raise_warnings = raise_warnings
 
         self.raw_sql = self.readProcedure()
 
@@ -81,7 +97,7 @@ class StoredProcedure():
             )
 
         # Determine additional context for the rendering of the procedure
-        if isinstance(context, dict):
+        if isinstance(context, dict) or callable(context):
             self._context = context
         elif context is None:
             self._context = None
@@ -89,7 +105,7 @@ class StoredProcedure():
             raise InitializationException(
                     procedure   = self
                 ,   field_name  = 'context'
-                ,   field_types = (None, dict)
+                ,   field_types = (None, dict, 'function')
                 ,   field_value = context
             )
 
@@ -97,13 +113,12 @@ class StoredProcedure():
         registerProcedure(self)
 
     def readProcedure(self):
-        """Read the procedure from the given location. The procedure is assumed
-        to be stored in utf-8 encoding."""
+        """Read the procedure from the given location. The procedure is assumed to be stored in utf-8 encoding."""
         if hasattr(settings, 'IN_SITE_ROOT'):
         	name = settings.IN_SITE_ROOT(self.filename)
         else:
         	name = self.filename
-        
+
         try:
             fileHandler = codecs.open(name, 'r', 'utf-8')
         except IOError as exp:
@@ -123,7 +138,19 @@ class StoredProcedure():
 
         # Fill in global context
         if not self._context is None:
-            renderContext.update(self._context)
+            # fetch the context
+            if callable(self._context):
+                try:
+                    context = self._context(self)
+                except Exception as exp:
+                    raise ProcedureContextException(
+                            procedure = self
+                        ,   exp       = exp
+                    )
+            else:
+                context = self._context
+
+            renderContext.update(context)
 
         # Render SQL
         sqlTemplate = Template(self.raw_sql)
@@ -132,7 +159,7 @@ class StoredProcedure():
         # Fill in actual names
         self.sql = library.replaceNames(
                 self.raw_sql
-            ,   functools.partial(ProcedurePreparationException, procedure = self)
+            ,   functools.partial(ProcedureKeyException, procedure = self)
         )
 
         # Store the procedure in the database
@@ -143,77 +170,45 @@ class StoredProcedure():
 
         # Try to delete the procedure, if it exists
         try:
-            cursor.execute('DROP PROCEDURE IF EXISTS %s' % connection.ops.quote_name(self.name))
-        except DatabaseError as exp:
-            raise ProcedureCreationException(
-                    procedure         = self
-                ,   operational_error = exp
-            )
-        except OperationalError as exp:
-            raise ProcedureCreationException(
-                    procedure         = self
-                ,   operational_error = exp
-            )
-        except Warning as exp:
-            # Warnings do not really matter
-            if verbosity >= 2:
-                print 'Warning raising while deleting stored procedure %s(%s):\n\t%s' %\
-                    (self.name, self.filename, exp)
+            # The database may give a warning when deleting a stored procedure which does not already
+            # exist. This warning is worthless
+            with warnings.catch_warnings(record = True) as ws:
+                # When sufficiently verbose or pedantic, display warnings
+                warnings.simplefilter('always' if verbosity >= 2 or self._raise_warnings else 'ignore')
 
-        # Try to insert the procedure
-        try:
-            cursor.execute(self.sql)
-        except DatabaseError as exp:
+                cursor.execute('DROP PROCEDURE IF EXISTS %s' % connection.ops.quote_name(self.name))
+                cursor.execute(self.sql)
+
+                if len(ws) >= 1:
+                    print "Warning during creation of %s" % self
+
+                    for warning in ws:
+                        print '\t%s' % warning.message
+
+        except (DatabaseError, OperationalError) as exp:
             raise ProcedureCreationException(
                     procedure         = self
                 ,   operational_error = exp
             )
-        except OperationalError as exp:
-            raise ProcedureCreationException(
-                    procedure         = self
-                ,   operational_error = exp
-            )
-        except Warning as exp:
-            # Warnings do not really matter
-            if verbosity >= 2:
-                print 'Warning raising while creating stored procedure %s(%s):\n\t%s' %\
-                    (self.name, self.filename, exp)
 
         cursor.close()
 
     def __call__(self, *args, **kwargs):
+        """Call the stored procedure. Arguments and keyword arguments to this method are fed to the stored procedure. First, all arguments are used, and then the keyword arguments are filled in. Nameclashes result in a TypeError."""
+        # Fetch the procedures arguments
         for arg, value in itertools.izip(self.arguments, args):
             if arg in kwargs:
                 raise TypeError('Argument at %s clashes, given via *args and **kwargs' % arg)
 
             kwargs[arg] = value
 
-        args = self._shuffle_arguments(kwargs)
+        args = list(self._shuffle_arguments(kwargs))
 
-        # Todo, wrap try-catch around this
         cursor = connection.cursor()
-        executed = True
-        try:
-            cursor.execute('CALL %s (%s)' % \
-                    (
-                            connection.ops.quote_name(self.name)
-                        ,   ','.join('%s' for _ in xrange(0, self.argCount))
-                    )
-                ,   list(args)
-                )
-        except DatabaseError as exp:
-            executed = False
-        except OperationalError as exp:
-            executed = False
-        except Warning as warning:
-            # A warning was raised, raise it whenever the user wants
-            if self._raise_warnings:
-                raise ProcedureExecutionException(
-                        procedure         = self
-                    ,   operational_error = warning
-                )
 
-        if not executed:
+        try:
+            cursor.execute(self.call, args)
+        except (DatabaseError, OperationalError) as exp:
             # Something went wrong, find out what
             code, message = exp.args
             if code == 1305:
@@ -235,15 +230,26 @@ class StoredProcedure():
                     ,   operational_error = exp
                 )
 
+        # Always force the cursor to free its warnings
+        with warnings.catch_warnings(record = True) as ws:
+            warnings.simplefilter('always' if self._raise_warnings else 'ignore')
+
+            if self.hasResults:
+                # There are some results to be fetched
+                results = cursor.fetchall()
+
+            cursor.close()
+
+            if len(ws) >= 1:
+                # A warning was raised, raise it whenever the user wants
+                raise ProcedureExecutionWarnings(
+                        procedure   = self
+                    ,   warnings    = ws
+                )
+
         if self.hasResults:
-            # There are some results to be fetched
-            results = cursor.fetchall()
-
             # if so requested, return only the first set of results
-            if self._flatten:
-                return results[0]
-
-            return results
+            return results[0] if self._flatten else results
 
     # Properties
     name = property(
@@ -265,6 +271,11 @@ class StoredProcedure():
                 fget = lambda self: self._hasResults
             ,   doc  = 'Whether the stored procedures requires a fetch after execution'
         )
+
+    call       = property(
+                fget  = lambda self: self._call
+            ,   doc   = 'The SQL code needed to call this stored procedure'
+    )
 
     def _match_procedure(self):
         match = methodParser.match(self.raw_sql)
@@ -289,53 +300,65 @@ class StoredProcedure():
             argumentContent = self._match_procedure().group('arguments')
 
         argumentData = []
-        arguments = []
 
         for match in argumentParser.finditer(argumentContent):
             name  = match.group('name')
             type  = match.group('type')
             inout = match.group('inout')
 
-            argumentData.append((name, (type, inout)))
-            arguments.append(name)
+            argumentData.append((name, type, inout))
 
-        self._generate_shuffle_arguments(arguments)
+        self._generate_shuffle_arguments(argumentData)
 
     def _generate_shuffle_arguments(self, arguments):
-        """Generate a method for shuffling a dictionary whose keys match exactly
-        the contents of arguments into the order as given by arguments."""
+        """Generate a method for shuffling a dictionary whose keys match exactly the contents of arguments into the order as given by arguments."""
         # First set the help of the call-method
-        self._arguments = arguments
+        self._arguments = [ name for (name, _, _) in arguments ]
+        argCount = len(arguments)
 
-        decoratedArguments = dict(itertools.izip(arguments, itertools.count(0)))
-        self.argCount = argCount = len(arguments)
+        # Generate the SQL needed to call the procedure
+        self._generate_call(argCount)
 
-        def key(arg_value_pair):
-            arg, value = arg_value_pair
-
-            try:
-                pos = decoratedArguments[arg]
-            except KeyError:
-                raise InvalidArgument(
-                        procedure = self
-                    ,   argument  = arg
-                )
-
-            return pos
-
+        # Generate the function which shuffles the arguments into the appropriate
+        # order on each stored procedure call
         def shuffle_argument(argValues):
             """Meant for internal use only, shuffles the arguments into correct order"""
-            shuffled = sorted(argValues.iteritems(), key = key)
+            argumentValues = []
 
-            if len(shuffled) < argCount:
+            for (argName, argType, argInOut) in arguments:
+                # Try to grab the argument
+                try:
+                    value = argValues.pop(argName)
+                except KeyError:
+                    continue
+
+                argumentValues.append(value)
+
+            # Notify the user of invalid arguments
+            if len(argValues) > 0:
+                raise InvalidArgument(
+                            procedure = self
+                        ,   arguments = argValues.keys()
+                    )
+
+            # Notify the user of missing arguments
+            if len(argumentValues) < argCount:
                 raise InsufficientArguments(
                         procedure          = self
                     ,   provided_arguments = argValues.keys()
                 )
 
-            return (value for _, value in shuffled)
+            return argumentValues
 
         self._shuffle_arguments = shuffle_argument
+
+    def _generate_call(self, argCount):
+        """Generates the call to this procedure"""
+        self._call = 'CALL %s (%s)' % \
+            (
+                    connection.ops.quote_name(self.name)
+                ,   ','.join('%s' for _ in xrange(0, argCount))
+            )
 
     def __unicode__(self):
         return u'%s (%s)' % (self.name, self.filename)

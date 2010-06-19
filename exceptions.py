@@ -29,16 +29,26 @@ class StoredProcedureException(Exception):
 class ProcedureExecutionException(StoredProcedureException):
     """Exception that occurs during the execution of a stored procedure."""
     def __init__(self, **kwargs):
-        """The argument `operational_error` is required, this should contain
-        an OperationalError."""
+        """The argument `operational_error` is required, this should contain an OperationalError."""
         self.operational_error = kwargs.pop('operational_error')
         super(ProcedureExecutionException, self).__init__(**kwargs)
 
     def description(self):
         return unicode(self.operational_error)
 
+class ProcedureExecutionWarnings(ProcedureExecutionException):
+    """Exception that occurs during the execution of a stored procedure."""
+    def __init__(self, **kwargs):
+        """The argument `warnings` is required, this should instances of Warning."""
+        self.operational_error = kwargs.pop('warnings')
+        super(ProcedureExecutionException, self).__init__(**kwargs)
+
+    def description(self):
+        return ', '.join(unicode(warning.message) for warning in self.operational_error)
+
 class ProcedureDoesNotExistException(ProcedureExecutionException):
-    pass
+    def description(self):
+        return 'The database does not know this procedure and gave the exception "%s". Perhaps you forgot to store it in the database?' % self.operational_error
 
 class IncorrectNumberOfArgumentsException(ProcedureExecutionException):
     def description(self):
@@ -49,14 +59,25 @@ class IncorrectNumberOfArgumentsException(ProcedureExecutionException):
             )
 
 class ProcedurePreparationException(StoredProcedureException):
+    pass
+
+class ProcedureContextException(ProcedurePreparationException):
     def __init__(self, **kwargs):
-        """The argument `key` is required, contains the key which could
-        not be found."""
-        self.key = kwargs.pop('key')
-        super(ProcedurePreparationException, self).__init__(**kwargs)
+        """The argument `exp` is required, contains the exception raised by the context-creation function"""
+        self.exp = kwargs.pop('exp')
+        super(ProcedureContextException, self).__init__(**kwargs)
 
     def description(self):
-        return u'Key "%s" could not be found' % self.key
+        return 'In processing the context, the exception "%s" occurred' % self.exp
+
+class ProcedureKeyException(ProcedurePreparationException):
+    def __init__(self, **kwargs):
+        """The argument `key` is required, contains the key which could not be found."""
+        self.key = kwargs.pop('key')
+        super(ProcedureKeyException, self).__init__(**kwargs)
+
+    def description(self):
+        return 'Key "%s" could not be found in processing the procedure\'s contents.' % self.key
 
 class ProcedureCreationException(StoredProcedureException):
     """Exception that occurs during the creation of a stored procedure."""
@@ -110,22 +131,17 @@ class InitializationException(StoredProcedureException):
 
 class InvalidArgument(StoredProcedureException):
     def __init__(self, **kwargs):
-        self.argument = kwargs.pop('argument')
+        self.arguments = kwargs.pop('arguments')
         super(InvalidArgument, self).__init__(**kwargs)
 
     def description(self):
-        if len(self.procedure.arguments) == 1:
-            return 'This procedure only takes the argument %s, you provided %s' % \
-                (
-                        self.procedure.arguments[0]
-                    ,   self.argument
-                )
-
-        return 'The argument %s is was not expected. Perhaps you meant one of: %s?' % \
-            (
-                    self.argument
-                ,   ','.join(self.procedure.arguments)
-            )
+        # Notify the user about which of the provided arguments were wrong,
+        # and which ones he could have used.
+        return 'This procedure only takes the arguments %(expected)s, you provided: %(rejected)s' % \
+            {
+                    'expected' : ', '.join(self.procedure.arguments)
+                ,   'rejected' : ', '.join(self.arguments)
+            }
 
 class InsufficientArguments(StoredProcedureException):
     def __init__(self, **kwargs):
@@ -136,4 +152,7 @@ class InsufficientArguments(StoredProcedureException):
     def description(self):
         return 'Insufficient amount of arguments, you omitted to provide %s.' % \
             ','.join(self.omitted)
+
+def RawSQLException(Exception):
+    """Generic exception related to raw sql"""
 
