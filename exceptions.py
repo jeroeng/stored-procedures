@@ -142,7 +142,7 @@ class InvalidArgument(StoredProcedureException):
     def _description(self):
         # Notify the user about which of the provided arguments were wrong,
         # and which ones he could have used.
-        return 'This procedure only takes the arguments %(expected)s, you provided: %(rejected)s' % \
+        return 'You provided the illegal arguments %(rejected)s, perhaps you meant: %(expected)s' % \
             {
                     'expected' : ', '.join(set(self.procedure.arguments) - self.given)
                 ,   'rejected' : ', '.join(self.arguments)
