@@ -1,4 +1,8 @@
-from django.core.exceptions import ImproperlyConfigured
+try:
+    from django.core.exceptions import ImproperlyConfigured
+except Exception as exp:
+    print exp
+
 from _mysql import OperationalError, Warning
 
 class StoredProcedureException(Exception):
@@ -8,20 +12,20 @@ class StoredProcedureException(Exception):
 
     procedure = property(lambda self: self._procedure)
 
-    def description(self):
+    def _description(self):
         """"Subclasses should override this method to provide a more detailled
-        description of the exception that occurred."""
+        _description of the exception that occurred."""
         return None
 
     def __unicode__(self):
-        """Provided a nice description of the exception."""
+        """Provided a nice _description of the exception."""
         try:
-            description = self.description()
+            _description = self._description()
         except Exception as exp:
-            description = '[Error not properly rendered due to %s]' % exp
+            _description = '[Error not properly rendered due to %s]' % exp
 
         return 'Exception in stored procedure %s' % self.procedure + (
-            '' if description is None else ': ' + description)
+            '' if _description is None else ': ' + _description)
 
     def __str__(self):
         return unicode(self).encode('utf8', 'replace')
@@ -33,7 +37,7 @@ class ProcedureExecutionException(StoredProcedureException):
         self.operational_error = kwargs.pop('operational_error')
         super(ProcedureExecutionException, self).__init__(**kwargs)
 
-    def description(self):
+    def _description(self):
         return unicode(self.operational_error)
 
 class ProcedureExecutionWarnings(ProcedureExecutionException):
@@ -43,15 +47,15 @@ class ProcedureExecutionWarnings(ProcedureExecutionException):
         self.operational_error = kwargs.pop('warnings')
         super(ProcedureExecutionException, self).__init__(**kwargs)
 
-    def description(self):
+    def _description(self):
         return ', '.join(unicode(warning.message) for warning in self.operational_error)
 
 class ProcedureDoesNotExistException(ProcedureExecutionException):
-    def description(self):
+    def _description(self):
         return 'The database does not know this procedure and gave the exception "%s". Perhaps you forgot to store it in the database?' % self.operational_error
 
 class IncorrectNumberOfArgumentsException(ProcedureExecutionException):
-    def description(self):
+    def _description(self):
         return 'We know of the arguments %s, but upon calling the procedure with these arguments filled in, the error "%s" occurred. Please check whether the argument list is correct.' % \
             (
                     ','.join(self.procedure.arguments)
@@ -67,7 +71,7 @@ class ProcedureContextException(ProcedurePreparationException):
         self.exp = kwargs.pop('exp')
         super(ProcedureContextException, self).__init__(**kwargs)
 
-    def description(self):
+    def _description(self):
         return 'In processing the context, the exception "%s" occurred' % self.exp
 
 class ProcedureKeyException(ProcedurePreparationException):
@@ -76,7 +80,7 @@ class ProcedureKeyException(ProcedurePreparationException):
         self.key = kwargs.pop('key')
         super(ProcedureKeyException, self).__init__(**kwargs)
 
-    def description(self):
+    def _description(self):
         return 'Key "%s" could not be found in processing the procedure\'s contents.' % self.key
 
 class ProcedureCreationException(StoredProcedureException):
@@ -87,7 +91,7 @@ class ProcedureCreationException(StoredProcedureException):
         self.operational_error = kwargs.pop('operational_error')
         super(ProcedureCreationException, self).__init__(**kwargs)
 
-    def description(self):
+    def _description(self):
         return unicode(self.operational_error)
 
 class ProcedureConfigurationException(StoredProcedureException, ImproperlyConfigured):
@@ -96,11 +100,11 @@ class ProcedureConfigurationException(StoredProcedureException, ImproperlyConfig
     should flat out stop when they occur."""
 
 class ProcedureNotParsableException(ProcedureConfigurationException):
-    def description(self):
+    def _description(self):
         return 'The stored procedure could not be parsed'
 
 class ArgumentsIrretrievableException(ProcedureNotParsableException):
-    def description(self):
+    def _description(self):
         return super(ArgumentsIrretrievableException, self) + \
             '; its could not be parsed.'
 
@@ -109,7 +113,7 @@ class FileDoesNotWorkException(ProcedureConfigurationException):
         self.file_error = kwargs.pop('file_error')
         super(FileDoesNotWorkException, self).__init__(**kwargs)
 
-    def description(self):
+    def _description(self):
         return 'Unable to open desired file, raised %s' % self.file_error
 
 class InitializationException(StoredProcedureException):
@@ -120,7 +124,7 @@ class InitializationException(StoredProcedureException):
         self.value       = kwargs.pop('value')
         super(InitializationException, self).__init__(**kwargs)
 
-    def description(self):
+    def _description(self):
         return  'Invalid argument given to initialization, %s should have been of type %s, the provided value %s was of type %s' % \
             (
                     self.field_name
@@ -132,14 +136,15 @@ class InitializationException(StoredProcedureException):
 class InvalidArgument(StoredProcedureException):
     def __init__(self, **kwargs):
         self.arguments = kwargs.pop('arguments')
+        self.given     = kwargs.pop('given')
         super(InvalidArgument, self).__init__(**kwargs)
 
-    def description(self):
+    def _description(self):
         # Notify the user about which of the provided arguments were wrong,
         # and which ones he could have used.
         return 'This procedure only takes the arguments %(expected)s, you provided: %(rejected)s' % \
             {
-                    'expected' : ', '.join(self.procedure.arguments)
+                    'expected' : ', '.join(set(self.procedure.arguments) - self.given)
                 ,   'rejected' : ', '.join(self.arguments)
             }
 
@@ -149,7 +154,7 @@ class InsufficientArguments(StoredProcedureException):
         super(InsufficientArguments, self).__init__(**kwargs)
         self.omitted = frozenset(self.procedure.arguments) - provided_arguments
 
-    def description(self):
+    def _description(self):
         return 'Insufficient amount of arguments, you omitted to provide %s.' % \
             ','.join(self.omitted)
 
@@ -164,4 +169,12 @@ class RawSQLKeyException(RawSQLException):
 
     def __unicode__(self):
         return 'Could not find key %s' % self.key
+
+class RawSQLWarning(RawSQLException):
+    def __init__(self, warnings):
+        self.warnings = warnings
+
+    def __unicode__(self):
+        return 'Warning: %s' % \
+            ', '.join(unicode(warning.message) for warning in self.warnings)
 

@@ -1,7 +1,11 @@
-from django.db import connection
+try:
+    from django.db import connection
+    from django.db.utils import DatabaseError
+    from django.conf import settings
+except ImportError as exp:
+    print exp
+
 from django.template import Template, Context
-from django.db.utils import DatabaseError
-from django.conf import settings
 from _mysql import OperationalError
 
 import codecs, itertools, re, functools, warnings
@@ -28,10 +32,26 @@ class StoredProcedure():
     ):
         """Make a wrapper for a stored procedure
 
- This provides a wrapper for stored procedures. Given the location of a stored procedure, this wrapper can automatically infer its arguments and name. Consequently, one can call the wrapper as if it were a function, using these arguments as keyword arguments, resulting in calling the stored procedure. The file containing the procedure must be in the location as specified by filename. It is often useful to have code like
-    > import os.path, functools
-    > SITE_ROOT = os.path.realpath(os.path.dirname(__file__))
-    > IN_SITE_ROOT = functools.partial(os.path.join, SITE_ROOT)
+:param filename: The file where the stored procedure's content is stored.
+:type filename: str or unicode
+:param arguments: A list of the argument the procedure needs.
+:type arguments: list of strings.
+:param results: whether the procedure yields a resultset (default is `False`)
+:type results: `bool`
+:param flatten: whether the resultset, whenever available, should be flattened to its first element, ueful when the procedure only returns one row (default `True`)
+:type flatten: bool
+:param context: a context (dictionary or function which takes the stored procedure itself and yields a dictionary) for rendering the procedure (default is empty)
+:param raise_warnings: whether warnings should be raised as an exception (default is false)
+:type raise_warnings: bool
+
+
+This provides a wrapper for stored procedures. Given the location of a stored procedure, this wrapper can automatically infer its arguments and name. Consequently, one can call the wrapper as if it were a function, using these arguments as keyword arguments, resulting in calling the stored procedure. The file containing the procedure must be in the location as specified by filename. It is often useful to have code like::
+
+    import os.path, functools
+    SITE_ROOT = os.path.realpath(os.path.dirname(__file__))
+    IN_SITE_ROOT = functools.partial(os.path.join, SITE_ROOT)
+
+
 in your settings.py file in django. When IN_SITE_ROOT is available, it will be used to make the filename absolute.
 
 By default, the stored procedure will be stored in the database (replacing any stored procedure with the same name) on a django-south migrate event.
@@ -39,14 +59,7 @@ By default, the stored procedure will be stored in the database (replacing any s
 It is possible to refer to models and columns of models from within the stored procedure in the following sense. If in the application "shop" one has a model named "Stock", then writing [shop.Stock] in the file describing the stored procedure will yield a the database-name of the model Stock. If this model has a field "shelf", then [shop.Stock.shelf] will yield the field's database name. As a shortcut, one can also use [shop.Stock.pk] to refer to the primary key of Stock. All these names are escaped appropriately.
 
 Moreover, one can use django templating language in the stored procedure. The argument `context` is fed to this template.
-
-Keyword arguments:
-    filename        -- the file where the stored procedure's content is stored.
-    arguments       -- a list of the argument the procedure needs (inferred by default)
-    results         -- whether the procedure yields a resultset (default is false)
-    flatten         -- whether the resultset, whenever available, should be flattened to its first element, ueful when the procedure only returns one row (default True)
-    content         -- a context (dictionary or function which takes the stored procedure itself and yields a dictionary) for rendering the procedure (default is empty)
-    raise_warnings  -- whether warnings should be raised as an exception (default is false)"""
+"""
         # Save settings
         self._filename = filename
         self._flatten = flatten
@@ -350,6 +363,7 @@ Keyword arguments:
         def shuffle_argument(argValues):
             """Meant for internal use only, shuffles the arguments into correct order"""
             argumentValues = []
+            givenArguments = set(argValues.keys())
 
             for argName in arguments:
                 # Try to grab the argument
@@ -365,6 +379,7 @@ Keyword arguments:
                 raise InvalidArgument(
                             procedure = self
                         ,   arguments = argValues.keys()
+                        ,   given     = givenArguments
                     )
 
             # Notify the user of missing arguments

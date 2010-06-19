@@ -1,5 +1,8 @@
-from django.db.models.signals import post_syncdb
-from django.db import models, connection
+try:
+    from django.db.models.signals import post_syncdb
+    from django.db import models, connection
+except Exception as exp:
+    print exp
 
 import re
 
