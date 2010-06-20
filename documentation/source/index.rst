@@ -69,8 +69,8 @@ This performs the very same query. Instead of having to guess names in the datab
 
 .. [#naive] Note that this example is not a very good motivator, as it can be solved satisfactory wholly within the ORM. See it merely as an illustration of the kind of problems one runs into when writing custom queries, not as an actual usecase.
 
-The SQL Class
--------------
+Reference
+---------
 .. autoclass:: stored_procedures.sql.SQL
     :members: __call__, content, __unicode__, __str__
 
@@ -154,18 +154,67 @@ The stored procedure that handles these orders is stored in the file 'placeOrder
         END IF;
     END;
 
-    When one now execute the code::
+
+When one now execute the code::
 
     print Order.objects.placeOrder(product = "Tomato", orderedAmount = 10)
 
-    the stored procedure is called and the results are printed. Note that this call is made using keyword argument; |SP| ensures that these come back in the right order. Were one to execute::
+the stored procedure is called and the results are printed. Note that this call is made using keyword argument; |SP| ensures that these come back in the right order. Were one to execute::
 
     print Order.objects.placeOrder(products = "Tomatoes", orderedAmount = 10)
 
-    then :exp:`~exceptions.InvalidArgument` would be raised. When printing this exception, you immediately see the incorrect argument you used (`arguments`) and the ones that were available (`argument`, `orderedAmount`)
+then :exc:`~exceptions.InvalidArgument` would be raised. When printing this exception, you immediately see the incorrect argument you used (`arguments`) and the ones that were available (`argument`, `orderedAmount`).
+
+Features
+--------
+
+Using Model Names
+^^^^^^^^^^^^^^^^^
+As described above, simply refer to tables, columns or primary keys respectively using [app.table], [app.table.column], [app.table.pk].
+
+Automatically Push to Database
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Database migrations, as provided for instance by `South <http://south.aeracode.org/docs/>`_, are the ideal moment to push stored procedures to the database server. This is the default behavious. Each instance of |SP| automatically is bound to the `post_migrate <http://south.aeracode.org/docs/signals.html#post-migrate>`_ signal. After a migration, the procedure is deleted from the database and re-created.
+
+Catching Exceptions and Warnings
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+When executing a stored procedure, many things could go wrong. It is often useful to know this as early as possible, with as much information as possible. Every risky operation in |SP| is wrapped in a try-catch block, yielding a new exception that is enriched with information about the procedure and hints towards solving it. Moreover, `MySQL-Python <http://mysql-python.sourceforge.net/MySQLdb.html>`_ can yield warnings which are directly printed to stderr. This is inconvenient in some situations, |SP| allows you to automatically suppress these warnings, or raise them as exceptions by setting a flag.
+
+Re-order Arguments
+^^^^^^^^^^^^^^^^^^
+There is no need to remember the order in which the arguments were given in the stored procedure. When calling |SP|, the arguments are seen as the first few arguments to the underlying stored procedure, and the keyword arguments can be fitted in in any order. Mistakes like nameclashes, invalid arguments, too few arguments are handled gracefully by the exceptions :exc:`TypeError`, :exc:`~exceptions.InvalidArgument` and :exc:`~exceptions.InsufficientArguments` respectively.
+
+Automatically infer Arguments
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Due to the above feature one needs to know the arguments to a specific stored procedure. These arguments can be provided by hand, but usually, they can be inferred automatically. If this is not possible, you will be notified of this by means of the exception :exc:`~exceptions.ArgumentsIrretrievableException`.
+
+In order to be able to parse the procedure, it first has to be loaded from file. The file containing the procedure must be in the location as specified by filename. It is often useful to have code like::
+
+    import os.path, functools
+    SITE_ROOT = os.path.realpath(os.path.dirname(__file__))
+    IN_SITE_ROOT = functools.partial(os.path.join, SITE_ROOT)
+
+
+in your settings.py file in django. When IN_SITE_ROOT is available, it will be used to make the filename absolute. When the file can not be found, :exc:`~exceptions.FileDoesNotWorkException` is raised.
+
+Reference
+---------
 
 .. autoclass:: procedure.StoredProcedure
     :members: __call__, resetProcedure, readProcedure, renderProcedure, send_to_database, name, filename, arguments, hasResults, call
+
+Exceptions
+==========
+.. automodule:: stored_procedures.exceptions
+    :members:
+    :undoc-members:
+
+Library
+=======
+
+.. automodule:: stored_procedures.library
+    :members: StoredProcedureLibary, registerProcedure, resetProcedures,reset, library
+    :undoc-members:
 
 Indices and tables
 ==================

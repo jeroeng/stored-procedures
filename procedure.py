@@ -43,16 +43,9 @@ class StoredProcedure():
 :param context: a context (dictionary or function which takes the stored procedure itself and yields a dictionary) for rendering the procedure (default is empty)
 :param raise_warnings: whether warnings should be raised as an exception (default is false)
 :type raise_warnings: bool
+:raises: :exc:`~exceptions.InitializationException` in case one of the arguments does not satisfy the above description or :exc:`~exceptions.FileDoesNotWorkException` in case :meth:`~procedure.StoredProcedure.readProcedure` fails. If you can not differentiate between these errors in handling them (as would be most common), simply check for :exc:`~exceptions.ProcedureConfigurationException`, as this is a parent of both.
 
-
-This provides a wrapper for stored procedures. Given the location of a stored procedure, this wrapper can automatically infer its arguments and name. Consequently, one can call the wrapper as if it were a function, using these arguments as keyword arguments, resulting in calling the stored procedure. The file containing the procedure must be in the location as specified by filename. It is often useful to have code like::
-
-    import os.path, functools
-    SITE_ROOT = os.path.realpath(os.path.dirname(__file__))
-    IN_SITE_ROOT = functools.partial(os.path.join, SITE_ROOT)
-
-
-in your settings.py file in django. When IN_SITE_ROOT is available, it will be used to make the filename absolute.
+This provides a wrapper for stored procedures. Given the location of a stored procedure, this wrapper can automatically infer its arguments and name. Consequently, one can call the wrapper as if it were a function, using these arguments as keyword arguments, resulting in calling the stored procedure.
 
 By default, the stored procedure will be stored in the database (replacing any stored procedure with the same name) on a django-south migrate event.
 
@@ -130,7 +123,9 @@ Moreover, one can use django templating language in the stored procedure. The ar
         registerProcedure(self)
 
     def readProcedure(self):
-        """Read the procedure from the given location. The procedure is assumed to be stored in utf-8 encoding."""
+        """Read the procedure from the given location. The procedure is assumed to be stored in utf-8 encoding.
+
+:raises: :exc:`~exceptions.FileDoesNotWorkException` in case the file could not be opened."""
         if hasattr(settings, 'IN_SITE_ROOT'):
             name = settings.IN_SITE_ROOT(self.filename)
         else:
@@ -149,10 +144,10 @@ Moreover, one can use django templating language in the stored procedure. The ar
     def renderProcedure(self, library):
         """Renders the stored procedure.
 
-Whenever the context given on initialization is dynamic, it is computed here. First, the SQL will be treated as a django-template with as context the given context and 'name' set to the (escaped) name of the stored procedure. Next, references to tables and columns will be replaced. This depends on the library in use, which carries information about which tables exist. The default library in library almost always suffices.
+:param library: The library that contains the table information.
+:raises: :exc:`~exceptions.ProcedureContextException` when the dynamic context's construction yields an :exc:`Exception`. When a reference to a table or column within the raw procedure does not exist, :exc:`~exceptions.ProcedureKeyException` is raised.
 
-Keyword arguments:
-    library -- the library that contains the table information"""
+Whenever the context given on initialization is dynamic, it is computed here. First, the SQL will be treated as a django-template with as context the given context and 'name' set to the (escaped) name of the stored procedure. Next, references to tables and columns will be replaced. This depends on the library in use, which carries information about which tables exist. The default library in library almost always suffices."""
         # Determine context of the procedure
         renderContext = \
             {
@@ -186,7 +181,7 @@ Keyword arguments:
         )
 
     def resetProcedure(self, library, verbosity = 2):
-        """Renders the procedure and stores it in the database. See renderProcedure and send_to_database for details."""
+        """Renders the procedure and stores it in the database. See :meth:`~procedure.StoredProcedure.renderProcedure` and :meth:`~procedure.StoredProcedure.send_to_database` for details."""
         # Render the procedure
         self.renderProcedure(library)
 
@@ -196,10 +191,11 @@ Keyword arguments:
     def send_to_database(self, verbosity):
         """Store the stored procedure in the database.
 
-Note that we first try to delete the procedure, and then insert it. Take great care not to accidentally delete some other procedure which just happens to carry the same name, this is *not* prevented here.
+:param verbosity: Determines how verbose we will be. On verbosity 2, warnings are printed to the standard output (default is 2)
+:raises: :exc:`~exceptions.ProcedureCreationException` in case of database errors.
 
-Keyword arguments:
-    verbosity   -- determines how verbose we will be. On verbosity 2, warnings are printed to the standard output (default is 2)"""
+Note that we first try to delete the procedure, and then insert it. Take great care not to accidentally delete some other procedure which just happens to carry the same name, this is *not* prevented here.
+"""
         cursor = connection.cursor()
 
         # Try to delete the procedure, if it exists
@@ -228,7 +224,9 @@ Keyword arguments:
         cursor.close()
 
     def __call__(self, *args, **kwargs):
-        """Call the stored procedure. Arguments and keyword arguments to this method are fed to the stored procedure. First, all arguments are used, and then the keyword arguments are filled in. Nameclashes result in a TypeError."""
+        """Call the stored procedure. Arguments and keyword arguments to this method are fed to the stored procedure. First, all arguments are used, and then the keyword arguments are filled in.
+
+:raises: Nameclashes result in a :exc:`TypeError`, invalid arguments yield :exc:`~exceptions.InvalidArgument` and too few arguments give rise to :exc:`~exceptions.InsufficientArguments`."""
         # Fetch the procedures arguments
         for arg, value in itertools.izip(self.arguments, args):
             if arg in kwargs:

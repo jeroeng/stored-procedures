@@ -32,7 +32,7 @@ sys.path.append(above(PROJECT_PATH))
 extensions = ['sphinx.ext.autodoc', 'sphinx.ext.ifconfig', 'sphinx.ext.intersphinx', 'sphinx.ext.inheritance_diagram', 'sphinx.ext.graphviz']
 
 autoclass_content    = 'both'
-autodoc_member_order = 'groupwise'
+autodoc_member_order = 'alphabetical'
 
 intersphinx_mapping = {'http://docs.python.org/': None}
 
