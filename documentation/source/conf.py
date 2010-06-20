@@ -36,7 +36,9 @@ autodoc_member_order = 'alphabetical'
 
 intersphinx_mapping = {'http://docs.python.org/': None}
 
-inheritance_graph_attrs = dict(ratio = "fill", fontname = "Helvetica", size = '"12, 10"')
+inheritance_node_attrs = dict(height = 0.9, fontsize = "19")
+inheritance_graph_attrs = dict(ratio = "auto", rankdir = "TB", size = '"15, 7"', searchsize=200, clusterrank
+ = "global", center = "true", mclimit = 10)
 
 
 

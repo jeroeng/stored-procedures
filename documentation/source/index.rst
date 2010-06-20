@@ -1,7 +1,6 @@
 .. |SP| replace:: :class:`~procedure.StoredProcedure`
 .. |RS| replace:: :class:`~stored_procedures.sql.SQL`
 
-
 Documentation of the Stored Procedures Module
 =============================================
 
@@ -205,6 +204,10 @@ Reference
 
 Exceptions
 ==========
+
+.. inheritance-diagram:: stored_procedures.exceptions
+    :parts: 1
+
 .. automodule:: stored_procedures.exceptions
     :members:
     :undoc-members:
