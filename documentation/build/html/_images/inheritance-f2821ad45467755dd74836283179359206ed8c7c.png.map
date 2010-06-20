@@ -1,0 +1,21 @@
+<map id="inheritancee9b7678621" name="inheritancee9b7678621">
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureContextException" title="ProcedureContextException" alt="" coords="1014,83,1153,109"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedurePreparationException" title="ProcedurePreparationException" alt="" coords="1073,43,1230,68"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureKeyException" title="ProcedureKeyException" alt="" coords="1160,83,1279,109"/>
+<area shape="rect" href="#stored_procedures.exceptions.FileDoesNotWorkException" title="FileDoesNotWorkException" alt="" coords="2,83,137,109"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureConfigurationException" title="ProcedureConfigurationException" alt="" coords="213,43,379,68"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureNotParsableException" title="ProcedureNotParsableException" alt="" coords="145,83,304,109"/>
+<area shape="rect" href="#stored_procedures.exceptions.InitializationException" title="InitializationException" alt="" coords="311,83,424,109"/>
+<area shape="rect" href="#stored_procedures.exceptions.ArgumentsIrretrievableException" title="ArgumentsIrretrievableException" alt="" coords="142,124,307,150"/>
+<area shape="rect" href="#stored_procedures.exceptions.RawSQLException" title="RawSQLException" alt="" coords="1285,2,1377,28"/>
+<area shape="rect" href="#stored_procedures.exceptions.RawSQLWarning" title="RawSQLWarning" alt="" coords="1237,43,1321,68"/>
+<area shape="rect" href="#stored_procedures.exceptions.RawSQLKeyException" title="RawSQLKeyException" alt="" coords="1328,43,1438,68"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureExecutionException" title="ProcedureExecutionException" alt="" coords="557,43,705,68"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureExecutionWarnings" title="ProcedureExecutionWarnings" alt="" coords="431,83,577,109"/>
+<area shape="rect" href="#stored_procedures.exceptions.IncorrectNumberOfArgumentsException" title="IncorrectNumberOfArgumentsException" alt="" coords="585,83,782,109"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureDoesNotExistException" title="ProcedureDoesNotExistException" alt="" coords="789,83,955,109"/>
+<area shape="rect" href="#stored_procedures.exceptions.StoredProcedureException" title="StoredProcedureException" alt="" coords="769,2,902,28"/>
+<area shape="rect" href="#stored_procedures.exceptions.InsufficientArguments" title="InsufficientArguments" alt="" coords="712,43,824,68"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureCreationException" title="ProcedureCreationException" alt="" coords="831,43,974,68"/>
+<area shape="rect" href="#stored_procedures.exceptions.InvalidArgument" title="InvalidArgument" alt="" coords="981,43,1066,68"/>
+</map>

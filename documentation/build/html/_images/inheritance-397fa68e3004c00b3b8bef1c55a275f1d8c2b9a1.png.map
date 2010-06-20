@@ -1,0 +1,21 @@
+<map id="inheritancee9b7678621" name="inheritancee9b7678621">
+<area shape="rect" href="#stored_procedures.exceptions.RawSQLWarning" title="RawSQLWarning" alt="" coords="2,56,96,90"/>
+<area shape="rect" href="#stored_procedures.exceptions.RawSQLException" title="RawSQLException" alt="" coords="56,3,161,36"/>
+<area shape="rect" href="#stored_procedures.exceptions.RawSQLKeyException" title="RawSQLKeyException" alt="" coords="106,56,230,90"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureConfigurationException" title="ProcedureConfigurationException" alt="" coords="239,56,427,90"/>
+<area shape="rect" href="#stored_procedures.exceptions.InsufficientArguments" title="InsufficientArguments" alt="" coords="673,56,799,90"/>
+<area shape="rect" href="#stored_procedures.exceptions.StoredProcedureException" title="StoredProcedureException" alt="" coords="908,3,1057,36"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureExecutionException" title="ProcedureExecutionException" alt="" coords="808,56,976,90"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedurePreparationException" title="ProcedurePreparationException" alt="" coords="985,56,1162,90"/>
+<area shape="rect" href="#stored_procedures.exceptions.InvalidArgument" title="InvalidArgument" alt="" coords="1172,56,1268,90"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureCreationException" title="ProcedureCreationException" alt="" coords="1278,56,1438,90"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureNotParsableException" title="ProcedureNotParsableException" alt="" coords="5,110,184,143"/>
+<area shape="rect" href="#stored_procedures.exceptions.ArgumentsIrretrievableException" title="ArgumentsIrretrievableException" alt="" coords="2,163,188,197"/>
+<area shape="rect" href="#stored_procedures.exceptions.InitializationException" title="InitializationException" alt="" coords="194,110,322,143"/>
+<area shape="rect" href="#stored_procedures.exceptions.FileDoesNotWorkException" title="FileDoesNotWorkException" alt="" coords="331,110,484,143"/>
+<area shape="rect" href="#stored_procedures.exceptions.IncorrectNumberOfArgumentsException" title="IncorrectNumberOfArgumentsException" alt="" coords="494,110,715,143"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureExecutionWarnings" title="ProcedureExecutionWarnings" alt="" coords="724,110,888,143"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureDoesNotExistException" title="ProcedureDoesNotExistException" alt="" coords="897,110,1084,143"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureKeyException" title="ProcedureKeyException" alt="" coords="1093,110,1227,143"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureContextException" title="ProcedureContextException" alt="" coords="1237,110,1394,143"/>
+</map>

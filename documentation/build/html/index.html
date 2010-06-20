@@ -1,0 +1,868 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Documentation of the Stored Procedures Module &mdash; Stored Procedures v0.1 documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Stored Procedures v0.1 documentation" href="#" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="#">Stored Procedures v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-stored_procedures">
+<span id="documentation-of-the-stored-procedures-module"></span><h1>Documentation of the Stored Procedures Module<a class="headerlink" href="#module-stored_procedures" title="Permalink to this headline">¶</a></h1>
+<p>This module provides a wrapper around stored procedures for MySQL and generic raw SQL expressions in django. The former is handled by <a class="reference internal" href="#procedure.StoredProcedure" title="procedure.StoredProcedure"><tt class="xref py py-class docutils literal"><span class="pre">StoredProcedure</span></tt></a>, the latter by <a class="reference internal" href="#stored_procedures.sql.SQL" title="stored_procedures.sql.SQL"><tt class="xref py py-class docutils literal"><span class="pre">SQL</span></tt></a>.</p>
+</div>
+<div class="section" id="raw-sql">
+<h1>Raw SQL<a class="headerlink" href="#raw-sql" title="Permalink to this headline">¶</a></h1>
+<p>There are situations in which raw SQL queries are necessary, when the ORM as provided by django is too restrictive to solve the problem at hand. Unfortunately, using raw SQL opens up a new batch of potential pitfalls. Below a small example of things that can go wrong, followed by a possible solution using <a class="reference internal" href="#stored_procedures.sql.SQL" title="stored_procedures.sql.SQL"><tt class="xref py py-class docutils literal"><span class="pre">SQL</span></tt></a>. The example is too small to be useful, but one familiar with large raw expressions might see the added value in the safity provided by <a class="reference internal" href="#stored_procedures.sql.SQL" title="stored_procedures.sql.SQL"><tt class="xref py py-class docutils literal"><span class="pre">SQL</span></tt></a>.</p>
+<div class="section" id="before">
+<h2>Before<a class="headerlink" href="#before" title="Permalink to this headline">¶</a></h2>
+<p>Suppose you have the model as below in the application <cite>locations</cite>,:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">Office</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span> <span class="o">=</span> <span class="mi">100</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>and the following model in <cite>administration</cite>.:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">Employee</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">name</span>    <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span> <span class="o">=</span> <span class="mi">100</span><span class="p">)</span>
+    <span class="n">office</span>  <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s">&#39;locations.Office&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Now suppose you want to count the number of employees per office.[#naive1]_ This can be done by means of the following code:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connection</span>
+
+<span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+<span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;&quot;&quot;SELECT office.name, COUNT(*)</span>
+<span class="s">    FROM</span>
+<span class="s">            employee</span>
+<span class="s">        ,   office</span>
+<span class="s">    WHERE</span>
+<span class="s">        office.id = employee.office_id</span>
+<span class="s">    GROUP BY</span>
+<span class="s">        office.id&quot;&quot;&quot;</span><span class="p">)</span>
+<span class="k">print</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+<span class="n">cursor</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Notice that many things are wrong with the fragment above.
+* you have no way of knowing whether the table <cite>Employee</cite> has database column <cite>employee</cite> (by default, it will not have this name at all);
+* the reference to <cite>Office</cite> from <cite>Employee</cite> might have a different database column than <cite>office_id</cite>;
+* some exceptions might be thrown
+* a warning may occur, and it may be written to stderr.</p>
+</div>
+<div class="section" id="after">
+<h2>After<a class="headerlink" href="#after" title="Permalink to this headline">¶</a></h2>
+<p>Using <a class="reference internal" href="#stored_procedures.sql.SQL" title="stored_procedures.sql.SQL"><tt class="xref py py-class docutils literal"><span class="pre">SQL</span></tt></a>, one can simply write:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">print</span> <span class="n">SQL</span><span class="p">(</span><span class="s">&quot;&quot;&quot;SELECT e.[locations.Office.name], COUNT(*)</span>
+<span class="s">    FROM</span>
+<span class="s">            [administration.Employee] as e</span>
+<span class="s">        ,   [locations.Office] as o</span>
+<span class="s">    WHERE</span>
+<span class="s">            e.[administration.Employee.office] = o.[locations.Office.pk]</span>
+<span class="s">    GROUP BY</span>
+<span class="s">        [locations.Office.pk]&quot;&quot;&quot;</span><span class="p">)()</span>
+</pre></div>
+</div>
+<p>This performs the very same query. Instead of having to guess names in the database corresponding to  models, they are automatically inferred. Moreover, they are auto-escaped whenever needed and Warnings are suppressed by default.</p>
+<p class="rubric">Footnotes</p>
+<table class="docutils footnote" frame="void" id="naive" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label">[1]</td><td>Note that this example is not a very good motivator, as it can be solved satisfactory wholly within the ORM. See it merely as an illustration of the kind of problems one runs into when writing custom queries, not as an actual usecase.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="reference">
+<h2>Reference<a class="headerlink" href="#reference" title="Permalink to this headline">¶</a></h2>
+<dl class="class">
+<dt id="stored_procedures.sql.SQL">
+<em class="property">class </em><tt class="descclassname">stored_procedures.sql.</tt><tt class="descname">SQL</tt><big>(</big><em>content</em>, <em>yield_results=True</em>, <em>raise_warnings=False</em><big>)</big><a class="headerlink" href="#stored_procedures.sql.SQL" title="Permalink to this definition">¶</a></dt>
+<dd><p>Wrapper for raw SQL statements.</p>
+<p>This allows one to wrap raw SQL code, with the same name-reference system as in <a class="reference internal" href="#procedure.StoredProcedure" title="procedure.StoredProcedure"><tt class="xref py py-class docutils literal"><span class="pre">procedure.StoredProcedure</span></tt></a>.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>content</strong> (<a class="reference external" href="http://docs.python.org/library/string.html#module-string" title="(in Python v2.6)"><em>string</em></a>) &#8211; The actual raw SQL.</li>
+<li><strong>yield_results</strong> (<a class="reference external" href="http://docs.python.org/library/functions.html#bool" title="(in Python v2.6)"><em>bool</em></a>) &#8211; Whether a call should yield the results (<cite>True</cite>) or cursor (<cite>False</cite>) (default is <cite>True</cite>)</li>
+<li><strong>raise_warnings</strong> (<a class="reference external" href="http://docs.python.org/library/functions.html#bool" title="(in Python v2.6)"><em>bool</em></a>) &#8211; Whether warnings should be raised as an <cite>Exception</cite>, in the case that <cite>yield_results</cite> is set to <cite>True</cite> (default if <cite>False</cite>)</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+<dl class="method">
+<dt id="stored_procedures.sql.SQL.__call__">
+<tt class="descname">__call__</tt><big>(</big><em>*args</em>, <em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.sql.SQL.__call__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Execute the SQL query</p>
+</dd></dl>
+
+</dd></dl>
+
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Even though <a class="reference internal" href="#stored_procedures.sql.SQL" title="stored_procedures.sql.SQL"><tt class="xref py py-class docutils literal"><span class="pre">SQL</span></tt></a> is discussed first in the documentation, it was constructed much later and used more scarcely than <a class="reference internal" href="#procedure.StoredProcedure" title="procedure.StoredProcedure"><tt class="xref py py-class docutils literal"><span class="pre">StoredProcedure</span></tt></a>. It thus might have more bugs than its size would lead to believe.</p>
+</div>
+</div>
+</div>
+<div class="section" id="stored-procedure">
+<h1>Stored Procedure<a class="headerlink" href="#stored-procedure" title="Permalink to this headline">¶</a></h1>
+<p>When writing stored procedures, one is faced with the same difficulties as when writing raw SQL. Moreover, many things can go wrong when executing a stored procedure. It might be the case that you forgot to save the stored procedure to the database, or that you entered an incorrect number of arguments. One has to ensure that the stored procedure that you wrote down is actually stored in the database. In order to make this a little bit easier, one can use <a class="reference internal" href="#procedure.StoredProcedure" title="procedure.StoredProcedure"><tt class="xref py py-class docutils literal"><span class="pre">StoredProcedure</span></tt></a>.</p>
+<div class="section" id="a-small-example">
+<h2>A Small Example<a class="headerlink" href="#a-small-example" title="Permalink to this headline">¶</a></h2>
+<p>Suppose you have a shop, and want to allow orders only of items that have a sufficiently large stock. This example is too easy to show the full potential of stored procedures, but is does nicely illustrate the use of <a class="reference internal" href="#procedure.StoredProcedure" title="procedure.StoredProcedure"><tt class="xref py py-class docutils literal"><span class="pre">StoredProcedure</span></tt></a>. Consider the models for the app <cite>shop</cite></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">OrderManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
+    <span class="n">placeOrder</span> <span class="o">=</span> <span class="n">StoredProcedure</span><span class="p">(</span><span class="n">filename</span> <span class="o">=</span> <span class="s">&#39;shop/placeOrder.sql&#39;</span><span class="p">,</span> <span class="n">results</span> <span class="o">=</span> <span class="bp">True</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">Stock</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">name</span>    <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span> <span class="o">=</span> <span class="mi">100</span><span class="p">)</span>
+    <span class="n">amount</span>  <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">PositiveIntegerField</span><span class="p">()</span>
+
+<span class="k">class</span> <span class="nc">Order</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">product</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="n">Stock</span><span class="p">)</span>
+    <span class="n">amount</span>  <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">PositiveIntegerField</span><span class="p">()</span>
+
+    <span class="n">objects</span> <span class="o">=</span> <span class="n">OrderManager</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>The stored procedure that handles these orders is stored in the file &#8216;placeOrder.sql&#8217;, which contains the following.</p>
+<div class="highlight-mysql"><div class="highlight"><pre><span class="k">CREATE</span> <span class="k">PROCEDURE</span>  <span class="nf">placeOrder</span>
+    <span class="p">(</span>
+            <span class="k">IN</span> <span class="n">orderedAmount</span> <span class="kt">INT</span>
+        <span class="p">,</span>   <span class="k">IN</span> <span class="n">product</span> <span class="kt">CHAR</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">MODIFIES</span> <span class="k">SQL</span> <span class="n">DATA</span>
+<span class="n">BEGIN</span>
+    <span class="k">DECLARE</span> <span class="n">stockID</span> <span class="kt">INT</span><span class="p">;</span>
+    <span class="k">DECLARE</span> <span class="n">stockAmount</span> <span class="kt">INT</span>
+
+    <span class="k">SELECT</span>
+            <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="n">Stock</span><span class="p">.</span><span class="n">pk</span><span class="p">]</span>
+        <span class="p">,</span>   <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="n">Stock</span><span class="p">.</span><span class="n">amount</span><span class="p">]</span>
+    <span class="k">INTO</span>
+            <span class="n">stockID</span>
+        <span class="p">,</span>   <span class="n">stockAmount</span>
+    <span class="k">FROM</span>
+        <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="n">Stock</span><span class="p">]</span>
+    <span class="k">WHERE</span>
+        <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="n">Stock</span><span class="p">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">product</span><span class="p">;</span>
+
+    <span class="k">IF</span> <span class="n">stockAmount</span> <span class="o">&gt;=</span> <span class="n">orderedAmount</span> <span class="k">THEN</span>
+        <span class="k">INSERT</span> <span class="k">INTO</span>
+            <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="k">Order</span><span class="p">]</span>
+            <span class="p">(</span>
+                    <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="k">Order</span><span class="p">.</span><span class="n">product</span><span class="p">]</span>
+                <span class="p">,</span>   <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="k">Order</span><span class="p">.</span><span class="n">amount</span><span class="p">]</span>
+            <span class="p">)</span>
+        <span class="k">VALUES</span>
+            <span class="p">(</span>
+                    <span class="n">stockID</span>
+                <span class="p">,</span>   <span class="n">orderedAmount</span>
+            <span class="p">);</span>
+
+        <span class="kt">SET</span> <span class="n">newOrderID</span> <span class="o">=</span> <span class="nf">LAST_INSERT_ID</span><span class="p">();</span>
+
+        <span class="k">UPDATE</span>
+            <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="n">Stock</span><span class="p">]</span>
+        <span class="kt">SET</span>
+            <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="n">Stock</span><span class="p">.</span><span class="n">amount</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="n">Stock</span><span class="p">.</span><span class="n">amount</span><span class="p">]</span> <span class="o">-</span> <span class="n">orderedAmount</span><span class="p">;</span>
+        <span class="k">WHERE</span>
+            <span class="p">[</span><span class="n">shop</span><span class="p">.</span><span class="n">Stock</span><span class="p">.</span><span class="n">pk</span><span class="p">]</span> <span class="o">=</span> <span class="n">stockID</span><span class="p">;</span>
+
+        <span class="k">SELECT</span> <span class="n">stockAmount</span><span class="p">,</span> <span class="n">newOrderID</span><span class="p">;</span>
+    <span class="k">ELSE</span>
+        <span class="k">SELECT</span> <span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">;</span>
+    <span class="n">END</span> <span class="k">IF</span><span class="p">;</span>
+<span class="n">END</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>When one now execute the code:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">print</span> <span class="n">Order</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">placeOrder</span><span class="p">(</span><span class="n">product</span> <span class="o">=</span> <span class="s">&quot;Tomato&quot;</span><span class="p">,</span> <span class="n">orderedAmount</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>the stored procedure is called and the results are printed. Note that this call is made using keyword argument; <a class="reference internal" href="#procedure.StoredProcedure" title="procedure.StoredProcedure"><tt class="xref py py-class docutils literal"><span class="pre">StoredProcedure</span></tt></a> ensures that these come back in the right order. Were one to execute:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">print</span> <span class="n">Order</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">placeOrder</span><span class="p">(</span><span class="n">products</span> <span class="o">=</span> <span class="s">&quot;Tomatoes&quot;</span><span class="p">,</span> <span class="n">orderedAmount</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>then <a class="reference internal" href="#stored_procedures.exceptions.InvalidArgument" title="stored_procedures.exceptions.InvalidArgument"><tt class="xref py py-exc docutils literal"><span class="pre">InvalidArgument</span></tt></a> would be raised. When printing this exception, you immediately see the incorrect argument you used (<cite>arguments</cite>) and the ones that were available (<cite>argument</cite>, <cite>orderedAmount</cite>).</p>
+</div>
+<div class="section" id="features">
+<h2>Features<a class="headerlink" href="#features" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="using-model-names">
+<h3>Using Model Names<a class="headerlink" href="#using-model-names" title="Permalink to this headline">¶</a></h3>
+<p>As described above, simply refer to tables, columns or primary keys respectively using [app.table], [app.table.column], [app.table.pk].</p>
+</div>
+<div class="section" id="automatically-push-to-database">
+<h3>Automatically Push to Database<a class="headerlink" href="#automatically-push-to-database" title="Permalink to this headline">¶</a></h3>
+<p>Database migrations, as provided for instance by <a class="reference external" href="http://south.aeracode.org/docs/">South</a>, are the ideal moment to push stored procedures to the database server. This is the default behavious. Each instance of <a class="reference internal" href="#procedure.StoredProcedure" title="procedure.StoredProcedure"><tt class="xref py py-class docutils literal"><span class="pre">StoredProcedure</span></tt></a> automatically is bound to the <a class="reference external" href="http://south.aeracode.org/docs/signals.html#post-migrate">post_migrate</a> signal. After a migration, the procedure is deleted from the database and re-created.</p>
+</div>
+<div class="section" id="catching-exceptions-and-warnings">
+<h3>Catching Exceptions and Warnings<a class="headerlink" href="#catching-exceptions-and-warnings" title="Permalink to this headline">¶</a></h3>
+<p>When executing a stored procedure, many things could go wrong. It is often useful to know this as early as possible, with as much information as possible. Every risky operation in <a class="reference internal" href="#procedure.StoredProcedure" title="procedure.StoredProcedure"><tt class="xref py py-class docutils literal"><span class="pre">StoredProcedure</span></tt></a> is wrapped in a try-catch block, yielding a new exception that is enriched with information about the procedure and hints towards solving it. Moreover, <a class="reference external" href="http://mysql-python.sourceforge.net/MySQLdb.html">MySQL-Python</a> can yield warnings which are directly printed to stderr. This is inconvenient in some situations, <a class="reference internal" href="#procedure.StoredProcedure" title="procedure.StoredProcedure"><tt class="xref py py-class docutils literal"><span class="pre">StoredProcedure</span></tt></a> allows you to automatically suppress these warnings, or raise them as exceptions by setting a flag.</p>
+</div>
+<div class="section" id="re-order-arguments">
+<h3>Re-order Arguments<a class="headerlink" href="#re-order-arguments" title="Permalink to this headline">¶</a></h3>
+<p>There is no need to remember the order in which the arguments were given in the stored procedure. When calling <a class="reference internal" href="#procedure.StoredProcedure" title="procedure.StoredProcedure"><tt class="xref py py-class docutils literal"><span class="pre">StoredProcedure</span></tt></a>, the arguments are seen as the first few arguments to the underlying stored procedure, and the keyword arguments can be fitted in in any order. Mistakes like nameclashes, invalid arguments, too few arguments are handled gracefully by the exceptions <tt class="xref py py-exc docutils literal"><span class="pre">TypeError</span></tt>, <a class="reference internal" href="#stored_procedures.exceptions.InvalidArgument" title="stored_procedures.exceptions.InvalidArgument"><tt class="xref py py-exc docutils literal"><span class="pre">InvalidArgument</span></tt></a> and <a class="reference internal" href="#stored_procedures.exceptions.InsufficientArguments" title="stored_procedures.exceptions.InsufficientArguments"><tt class="xref py py-exc docutils literal"><span class="pre">InsufficientArguments</span></tt></a> respectively.</p>
+</div>
+<div class="section" id="automatically-infer-arguments">
+<h3>Automatically infer Arguments<a class="headerlink" href="#automatically-infer-arguments" title="Permalink to this headline">¶</a></h3>
+<p>Due to the above feature one needs to know the arguments to a specific stored procedure. These arguments can be provided by hand, but usually, they can be inferred automatically. If this is not possible, you will be notified of this by means of the exception <a class="reference internal" href="#stored_procedures.exceptions.ArgumentsIrretrievableException" title="stored_procedures.exceptions.ArgumentsIrretrievableException"><tt class="xref py py-exc docutils literal"><span class="pre">ArgumentsIrretrievableException</span></tt></a>.</p>
+<p>In order to be able to parse the procedure, it first has to be loaded from file. The file containing the procedure must be in the location as specified by filename. It is often useful to have code like:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">os.path</span><span class="o">,</span> <span class="nn">functools</span>
+<span class="n">SITE_ROOT</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">))</span>
+<span class="n">IN_SITE_ROOT</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">,</span> <span class="n">SITE_ROOT</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>in your settings.py file in django. When IN_SITE_ROOT is available, it will be used to make the filename absolute. When the file can not be found, <a class="reference internal" href="#stored_procedures.exceptions.FileDoesNotWorkException" title="stored_procedures.exceptions.FileDoesNotWorkException"><tt class="xref py py-exc docutils literal"><span class="pre">FileDoesNotWorkException</span></tt></a> is raised.</p>
+</div>
+</div>
+<div class="section" id="id1">
+<h2>Reference<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h2>
+<dl class="class">
+<dt id="procedure.StoredProcedure">
+<em class="property">class </em><tt class="descclassname">procedure.</tt><tt class="descname">StoredProcedure</tt><big>(</big><em>filename</em>, <em>name=None</em>, <em>arguments=None</em>, <em>results=False</em>, <em>flatten=True</em>, <em>context=None</em>, <em>raise_warnings=False</em><big>)</big><a class="headerlink" href="#procedure.StoredProcedure" title="Permalink to this definition">¶</a></dt>
+<dd><p>Make a wrapper for a stored procedure</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>filename</strong> &#8211; The file where the stored procedure&#8217;s content is stored.</li>
+<li><strong>arguments</strong> &#8211; A list of the argument the procedure needs.</li>
+<li><strong>results</strong> (<a class="reference external" href="http://docs.python.org/library/functions.html#bool" title="(in Python v2.6)"><em>bool</em></a>) &#8211; whether the procedure yields a resultset (default is <cite>False</cite>)</li>
+<li><strong>flatten</strong> &#8211; whether the resultset, whenever available, should be flattened to its first element, ueful when the procedure only returns one row (default <cite>True</cite>)</li>
+<li><strong>context</strong> &#8211; a context (dictionary or function which takes the stored procedure itself and yields a dictionary) for rendering the procedure (default is empty)</li>
+<li><strong>raise_warnings</strong> &#8211; whether warnings should be raised as an exception (default is false)</li>
+</ul>
+</td>
+</tr>
+<tr class="field"><th class="field-name">Raises :</th><td class="field-body"><p class="first last"><a class="reference internal" href="#stored_procedures.exceptions.InitializationException" title="stored_procedures.exceptions.InitializationException"><tt class="xref py py-exc docutils literal"><span class="pre">InitializationException</span></tt></a> in case one of the arguments does not satisfy the above description or <a class="reference internal" href="#stored_procedures.exceptions.FileDoesNotWorkException" title="stored_procedures.exceptions.FileDoesNotWorkException"><tt class="xref py py-exc docutils literal"><span class="pre">FileDoesNotWorkException</span></tt></a> in case <a class="reference internal" href="#procedure.StoredProcedure.readProcedure" title="procedure.StoredProcedure.readProcedure"><tt class="xref py py-meth docutils literal"><span class="pre">readProcedure()</span></tt></a> fails. If you can not differentiate between these errors in handling them (as would be most common), simply check for <a class="reference internal" href="#stored_procedures.exceptions.ProcedureConfigurationException" title="stored_procedures.exceptions.ProcedureConfigurationException"><tt class="xref py py-exc docutils literal"><span class="pre">ProcedureConfigurationException</span></tt></a>, as this is a parent of both.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>This provides a wrapper for stored procedures. Given the location of a stored procedure, this wrapper can automatically infer its arguments and name. Consequently, one can call the wrapper as if it were a function, using these arguments as keyword arguments, resulting in calling the stored procedure.</p>
+<p>By default, the stored procedure will be stored in the database (replacing any stored procedure with the same name) on a django-south migrate event.</p>
+<p>It is possible to refer to models and columns of models from within the stored procedure in the following sense. If in the application &#8220;shop&#8221; one has a model named &#8220;Stock&#8221;, then writing [shop.Stock] in the file describing the stored procedure will yield a the database-name of the model Stock. If this model has a field &#8220;shelf&#8221;, then [shop.Stock.shelf] will yield the field&#8217;s database name. As a shortcut, one can also use [shop.Stock.pk] to refer to the primary key of Stock. All these names are escaped appropriately.</p>
+<p>Moreover, one can use django templating language in the stored procedure. The argument <cite>context</cite> is fed to this template.</p>
+<dl class="method">
+<dt id="procedure.StoredProcedure.__call__">
+<tt class="descname">__call__</tt><big>(</big><em>*args</em>, <em>**kwargs</em><big>)</big><a class="headerlink" href="#procedure.StoredProcedure.__call__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Call the stored procedure. Arguments and keyword arguments to this method are fed to the stored procedure. First, all arguments are used, and then the keyword arguments are filled in.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Raises :</th><td class="field-body">Nameclashes result in a <tt class="xref py py-exc docutils literal"><span class="pre">TypeError</span></tt>, invalid arguments yield <a class="reference internal" href="#stored_procedures.exceptions.InvalidArgument" title="stored_procedures.exceptions.InvalidArgument"><tt class="xref py py-exc docutils literal"><span class="pre">InvalidArgument</span></tt></a> and too few arguments give rise to <a class="reference internal" href="#stored_procedures.exceptions.InsufficientArguments" title="stored_procedures.exceptions.InsufficientArguments"><tt class="xref py py-exc docutils literal"><span class="pre">InsufficientArguments</span></tt></a>.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="procedure.StoredProcedure.resetProcedure">
+<tt class="descname">resetProcedure</tt><big>(</big><em>library</em>, <em>verbosity=2</em><big>)</big><a class="headerlink" href="#procedure.StoredProcedure.resetProcedure" title="Permalink to this definition">¶</a></dt>
+<dd><p>Renders the procedure and stores it in the database. See <a class="reference internal" href="#procedure.StoredProcedure.renderProcedure" title="procedure.StoredProcedure.renderProcedure"><tt class="xref py py-meth docutils literal"><span class="pre">renderProcedure()</span></tt></a> and <a class="reference internal" href="#procedure.StoredProcedure.send_to_database" title="procedure.StoredProcedure.send_to_database"><tt class="xref py py-meth docutils literal"><span class="pre">send_to_database()</span></tt></a> for details.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="procedure.StoredProcedure.readProcedure">
+<tt class="descname">readProcedure</tt><big>(</big><big>)</big><a class="headerlink" href="#procedure.StoredProcedure.readProcedure" title="Permalink to this definition">¶</a></dt>
+<dd><p>Read the procedure from the given location. The procedure is assumed to be stored in utf-8 encoding.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Raises :</th><td class="field-body"><a class="reference internal" href="#stored_procedures.exceptions.FileDoesNotWorkException" title="stored_procedures.exceptions.FileDoesNotWorkException"><tt class="xref py py-exc docutils literal"><span class="pre">FileDoesNotWorkException</span></tt></a> in case the file could not be opened.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="procedure.StoredProcedure.renderProcedure">
+<tt class="descname">renderProcedure</tt><big>(</big><em>library</em><big>)</big><a class="headerlink" href="#procedure.StoredProcedure.renderProcedure" title="Permalink to this definition">¶</a></dt>
+<dd><p>Renders the stored procedure.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>library</strong> &#8211; The library that contains the table information.</li>
+</ul>
+</td>
+</tr>
+<tr class="field"><th class="field-name">Raises :</th><td class="field-body"><p class="first last"><a class="reference internal" href="#stored_procedures.exceptions.ProcedureContextException" title="stored_procedures.exceptions.ProcedureContextException"><tt class="xref py py-exc docutils literal"><span class="pre">ProcedureContextException</span></tt></a> when the dynamic context&#8217;s construction yields an <tt class="xref py py-exc docutils literal"><span class="pre">Exception</span></tt>. When a reference to a table or column within the raw procedure does not exist, <a class="reference internal" href="#stored_procedures.exceptions.ProcedureKeyException" title="stored_procedures.exceptions.ProcedureKeyException"><tt class="xref py py-exc docutils literal"><span class="pre">ProcedureKeyException</span></tt></a> is raised.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>Whenever the context given on initialization is dynamic, it is computed here. First, the SQL will be treated as a django-template with as context the given context and &#8216;name&#8217; set to the (escaped) name of the stored procedure. Next, references to tables and columns will be replaced. This depends on the library in use, which carries information about which tables exist. The default library in library almost always suffices.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="procedure.StoredProcedure.send_to_database">
+<tt class="descname">send_to_database</tt><big>(</big><em>verbosity</em><big>)</big><a class="headerlink" href="#procedure.StoredProcedure.send_to_database" title="Permalink to this definition">¶</a></dt>
+<dd><p>Store the stored procedure in the database.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>verbosity</strong> &#8211; Determines how verbose we will be. On verbosity 2, warnings are printed to the standard output (default is 2)</li>
+</ul>
+</td>
+</tr>
+<tr class="field"><th class="field-name">Raises :</th><td class="field-body"><p class="first last"><a class="reference internal" href="#stored_procedures.exceptions.ProcedureCreationException" title="stored_procedures.exceptions.ProcedureCreationException"><tt class="xref py py-exc docutils literal"><span class="pre">ProcedureCreationException</span></tt></a> in case of database errors.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>Note that we first try to delete the procedure, and then insert it. Take great care not to accidentally delete some other procedure which just happens to carry the same name, this is <em>not</em> prevented here.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="procedure.StoredProcedure.name">
+<tt class="descname">name</tt><a class="headerlink" href="#procedure.StoredProcedure.name" title="Permalink to this definition">¶</a></dt>
+<dd><p>Name of the stored procedure</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="procedure.StoredProcedure.filename">
+<tt class="descname">filename</tt><a class="headerlink" href="#procedure.StoredProcedure.filename" title="Permalink to this definition">¶</a></dt>
+<dd><p>Filename of the stored procedure</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="procedure.StoredProcedure.arguments">
+<tt class="descname">arguments</tt><a class="headerlink" href="#procedure.StoredProcedure.arguments" title="Permalink to this definition">¶</a></dt>
+<dd><p>Arguments the procedure accepts</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="procedure.StoredProcedure.hasResults">
+<tt class="descname">hasResults</tt><a class="headerlink" href="#procedure.StoredProcedure.hasResults" title="Permalink to this definition">¶</a></dt>
+<dd><p>Whether the stored procedures requires a fetch after execution</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="procedure.StoredProcedure.call">
+<tt class="descname">call</tt><a class="headerlink" href="#procedure.StoredProcedure.call" title="Permalink to this definition">¶</a></dt>
+<dd><p>The SQL code needed to call the stored procedure</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+</div>
+<div class="section" id="exceptions">
+<h1>Exceptions<a class="headerlink" href="#exceptions" title="Permalink to this headline">¶</a></h1>
+<p class="graphviz">
+<img src="_images/inheritance-d41fdc91e772624c7dd9575410412715cac37294.png" alt="Inheritance diagram of stored_procedures.exceptions" usemap="#inheritancee9b7678621" class="inheritance"/>
+<map id="inheritancee9b7678621" name="inheritancee9b7678621">
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureContextException" title="ProcedureContextException" alt="" coords="1048,114,1199,149"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedurePreparationException" title="ProcedurePreparationException" alt="" coords="1039,58,1207,93"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureKeyException" title="ProcedureKeyException" alt="" coords="1208,114,1337,149"/>
+<area shape="rect" href="#stored_procedures.exceptions.InsufficientArguments" title="InsufficientArguments" alt="" coords="369,58,491,93"/>
+<area shape="rect" href="#stored_procedures.exceptions.StoredProcedureException" title="StoredProcedureException" alt="" coords="588,3,731,38"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureConfigurationException" title="ProcedureConfigurationException" alt="" coords="155,58,334,93"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureCreationException" title="ProcedureCreationException" alt="" coords="500,58,653,93"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureExecutionException" title="ProcedureExecutionException" alt="" coords="663,58,824,93"/>
+<area shape="rect" href="#stored_procedures.exceptions.InvalidArgument" title="InvalidArgument" alt="" coords="834,58,926,93"/>
+<area shape="rect" href="#stored_procedures.exceptions.InitializationException" title="InitializationException" alt="" coords="2,114,123,149"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureNotParsableException" title="ProcedureNotParsableException" alt="" coords="133,114,305,149"/>
+<area shape="rect" href="#stored_procedures.exceptions.FileDoesNotWorkException" title="FileDoesNotWorkException" alt="" coords="315,114,460,149"/>
+<area shape="rect" href="#stored_procedures.exceptions.ArgumentsIrretrievableException" title="ArgumentsIrretrievableException" alt="" coords="131,170,308,205"/>
+<area shape="rect" href="#stored_procedures.exceptions.RawSQLKeyException" title="RawSQLKeyException" alt="" coords="1217,58,1336,93"/>
+<area shape="rect" href="#stored_procedures.exceptions.RawSQLException" title="RawSQLException" alt="" coords="1284,3,1384,38"/>
+<area shape="rect" href="#stored_procedures.exceptions.RawSQLWarning" title="RawSQLWarning" alt="" coords="1346,58,1438,93"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureExecutionWarnings" title="ProcedureExecutionWarnings" alt="" coords="470,114,627,149"/>
+<area shape="rect" href="#stored_procedures.exceptions.IncorrectNumberOfArgumentsException" title="IncorrectNumberOfArgumentsException" alt="" coords="637,114,850,149"/>
+<area shape="rect" href="#stored_procedures.exceptions.ProcedureDoesNotExistException" title="ProcedureDoesNotExistException" alt="" coords="860,114,1038,149"/>
+</map>
+</p>
+<span class="target" id="module-stored_procedures.exceptions"></span><dl class="exception">
+<dt id="stored_procedures.exceptions.ArgumentsIrretrievableException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">ArgumentsIrretrievableException</tt><big>(</big><em>procedure</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.ArgumentsIrretrievableException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when we can not automatically infer the stored procedure&#8217;s arguments</p>
+<p>Generic exception related to a stored procedure.</p>
+<p>Subclasses should override the method <tt class="xref py py-meth docutils literal"><span class="pre">_description()</span></tt>, which provides a description of the exception that occurred. This approach is taken to provide a uniform message for all exceptions, at least displaying the procedures&#8217;s name and filename.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>procedure</strong> (<em>StoredProcedure</em>) &#8211; The stored procedure which raised this exception.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.FileDoesNotWorkException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">FileDoesNotWorkException</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.FileDoesNotWorkException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when the file in which the stored procedures should be contained could not be opened.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>file_error</strong> &#8211; Exception that occurred when trying to open the file</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.IncorrectNumberOfArgumentsException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">IncorrectNumberOfArgumentsException</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.IncorrectNumberOfArgumentsException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when the database expected a different amount of arguments than we know of.</p>
+<p>Exception that occurs during the execution of a stored procedure.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>operational_error</strong> (<em>Exception</em>) &#8211; The exception that occurred, in most cases this will be of type <tt class="xref py py-exc docutils literal"><span class="pre">django.db.utils.DatabaseError</span></tt> or <cite>_mysql.OperationalError</cite>.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.InitializationException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">InitializationException</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.InitializationException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when one of the arguments of the stored procedure&#8217;s constructor was incorrect.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>field_name</strong> &#8211; The name of the argument which was incorrectly set</li>
+<li><strong>field_types</strong> &#8211; List of types (or names thereof) which would have been accepted</li>
+<li><strong>value</strong> &#8211; The offending value.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.InsufficientArguments">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">InsufficientArguments</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.InsufficientArguments" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when an insufficient amount of arguments was provided to the stored procedure.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>provided_arguments</strong> &#8211; List of the arguments that were provided</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.InvalidArgument">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">InvalidArgument</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.InvalidArgument" title="Permalink to this definition">¶</a></dt>
+<dd><p>&#8220;Raised when invalid arguments were given to the stored procedure</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>arguments</strong> &#8211; The rejected arguments</li>
+<li><strong>given</strong> &#8211; All arguments that were provided</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.ProcedureConfigurationException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">ProcedureConfigurationException</tt><big>(</big><em>procedure</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.ProcedureConfigurationException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Exception that occurs during the initialization of a stored procedure.
+Exceptions of this type are also <tt class="xref py py-exc docutils literal"><span class="pre">ImproperlyConfigured</span></tt> exceptions, as django
+should flat out stop when they occur.</p>
+<p>Generic exception related to a stored procedure.</p>
+<p>Subclasses should override the method <tt class="xref py py-meth docutils literal"><span class="pre">_description()</span></tt>, which provides a description of the exception that occurred. This approach is taken to provide a uniform message for all exceptions, at least displaying the procedures&#8217;s name and filename.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>procedure</strong> (<em>StoredProcedure</em>) &#8211; The stored procedure which raised this exception.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.ProcedureContextException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">ProcedureContextException</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.ProcedureContextException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when rendering the dynamic context raised an <tt class="xref py py-exc docutils literal"><span class="pre">Exception</span></tt>.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>exp</strong> &#8211; the exception raised by the context-creation function</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.ProcedureCreationException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">ProcedureCreationException</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.ProcedureCreationException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Exception that occurs when storing the stored procedure in the database.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>operational_error</strong> (<em>Exception</em>) &#8211; The exception that occurred, in most cases this will be of type <tt class="xref py py-exc docutils literal"><span class="pre">django.db.utils.DatabaseError</span></tt> or <cite>_mysql.OperationalError</cite>.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.ProcedureDoesNotExistException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">ProcedureDoesNotExistException</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.ProcedureDoesNotExistException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when the stored procedure one tries to call does not exist in the database</p>
+<p>Exception that occurs during the execution of a stored procedure.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>operational_error</strong> (<em>Exception</em>) &#8211; The exception that occurred, in most cases this will be of type <tt class="xref py py-exc docutils literal"><span class="pre">django.db.utils.DatabaseError</span></tt> or <cite>_mysql.OperationalError</cite>.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.ProcedureExecutionException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">ProcedureExecutionException</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.ProcedureExecutionException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Exception that occurs during the execution of a stored procedure.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>operational_error</strong> (<em>Exception</em>) &#8211; The exception that occurred, in most cases this will be of type <tt class="xref py py-exc docutils literal"><span class="pre">django.db.utils.DatabaseError</span></tt> or <cite>_mysql.OperationalError</cite>.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.ProcedureExecutionWarnings">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">ProcedureExecutionWarnings</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.ProcedureExecutionWarnings" title="Permalink to this definition">¶</a></dt>
+<dd><p>Warnings that occurred during the execution of a stored procedure.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>warnings</strong> &#8211; The warnings that occurred, should be a list of <tt class="xref py py-exc docutils literal"><span class="pre">Warning</span></tt>.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.ProcedureKeyException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">ProcedureKeyException</tt><big>(</big><em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.ProcedureKeyException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when a certain reference did not exist.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>key</strong> &#8211; contains the key which could not be found.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.ProcedureNotParsableException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">ProcedureNotParsableException</tt><big>(</big><em>procedure</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.ProcedureNotParsableException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when the procedure could not be parsed</p>
+<p>Generic exception related to a stored procedure.</p>
+<p>Subclasses should override the method <tt class="xref py py-meth docutils literal"><span class="pre">_description()</span></tt>, which provides a description of the exception that occurred. This approach is taken to provide a uniform message for all exceptions, at least displaying the procedures&#8217;s name and filename.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>procedure</strong> (<em>StoredProcedure</em>) &#8211; The stored procedure which raised this exception.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.ProcedurePreparationException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">ProcedurePreparationException</tt><big>(</big><em>procedure</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.ProcedurePreparationException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when something went wrong while preparing the stored procedure for being stored in the database</p>
+<p>Generic exception related to a stored procedure.</p>
+<p>Subclasses should override the method <tt class="xref py py-meth docutils literal"><span class="pre">_description()</span></tt>, which provides a description of the exception that occurred. This approach is taken to provide a uniform message for all exceptions, at least displaying the procedures&#8217;s name and filename.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>procedure</strong> (<em>StoredProcedure</em>) &#8211; The stored procedure which raised this exception.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.RawSQLException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">RawSQLException</tt><a class="headerlink" href="#stored_procedures.exceptions.RawSQLException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generic exception related to raw sql</p>
+</dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.RawSQLKeyException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">RawSQLKeyException</tt><big>(</big><em>key</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.RawSQLKeyException" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.RawSQLWarning">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">RawSQLWarning</tt><big>(</big><em>warnings</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.RawSQLWarning" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="exception">
+<dt id="stored_procedures.exceptions.StoredProcedureException">
+<em class="property">exception </em><tt class="descclassname">stored_procedures.exceptions.</tt><tt class="descname">StoredProcedureException</tt><big>(</big><em>procedure</em><big>)</big><a class="headerlink" href="#stored_procedures.exceptions.StoredProcedureException" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generic exception related to a stored procedure.</p>
+<p>Subclasses should override the method <tt class="xref py py-meth docutils literal"><span class="pre">_description()</span></tt>, which provides a description of the exception that occurred. This approach is taken to provide a uniform message for all exceptions, at least displaying the procedures&#8217;s name and filename.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>procedure</strong> (<em>StoredProcedure</em>) &#8211; The stored procedure which raised this exception.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+<dl class="attribute">
+<dt id="stored_procedures.exceptions.StoredProcedureException.procedure">
+<tt class="descname">procedure</tt><a class="headerlink" href="#stored_procedures.exceptions.StoredProcedureException.procedure" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-stored_procedures.library">
+<span id="library"></span><h1>Library<a class="headerlink" href="#module-stored_procedures.library" title="Permalink to this headline">¶</a></h1>
+<dl class="class">
+<dt id="stored_procedures.library.StoredProcedureLibary">
+<em class="property">class </em><tt class="descclassname">stored_procedures.library.</tt><tt class="descname">StoredProcedureLibary</tt><a class="headerlink" href="#stored_procedures.library.StoredProcedureLibary" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="method">
+<dt id="stored_procedures.library.StoredProcedureLibary.buildModelLibrary">
+<tt class="descname">buildModelLibrary</tt><big>(</big><big>)</big><a class="headerlink" href="#stored_procedures.library.StoredProcedureLibary.buildModelLibrary" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="stored_procedures.library.StoredProcedureLibary.modelLibrary">
+<tt class="descname">modelLibrary</tt><a class="headerlink" href="#stored_procedures.library.StoredProcedureLibary.modelLibrary" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="stored_procedures.library.StoredProcedureLibary.procedures">
+<tt class="descname">procedures</tt><a class="headerlink" href="#stored_procedures.library.StoredProcedureLibary.procedures" title="Permalink to this definition">¶</a></dt>
+<dd><p>List of all stored procedures registered at the library</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="stored_procedures.library.StoredProcedureLibary.registerProcedure">
+<tt class="descname">registerProcedure</tt><big>(</big><em>procedure</em><big>)</big><a class="headerlink" href="#stored_procedures.library.StoredProcedureLibary.registerProcedure" title="Permalink to this definition">¶</a></dt>
+<dd><p>Each stored procedure is registered with the library.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="stored_procedures.library.StoredProcedureLibary.replaceNames">
+<tt class="descname">replaceNames</tt><big>(</big><em>sql</em>, <em>KeyExp</em><big>)</big><a class="headerlink" href="#stored_procedures.library.StoredProcedureLibary.replaceNames" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="stored_procedures.library.StoredProcedureLibary.resetProcedures">
+<tt class="descname">resetProcedures</tt><big>(</big><em>verbosity</em>, <em>force_repeat=False</em><big>)</big><a class="headerlink" href="#stored_procedures.library.StoredProcedureLibary.resetProcedures" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="function">
+<dt id="stored_procedures.library.registerProcedure">
+<tt class="descclassname">stored_procedures.library.</tt><tt class="descname">registerProcedure</tt><big>(</big><em>procedure</em><big>)</big><a class="headerlink" href="#stored_procedures.library.registerProcedure" title="Permalink to this definition">¶</a></dt>
+<dd><p>Registers a procedure with the libary.</p>
+</dd></dl>
+
+<dl class="function">
+<dt id="stored_procedures.library.resetProcedures">
+<tt class="descclassname">stored_procedures.library.</tt><tt class="descname">resetProcedures</tt><big>(</big><em>verbosity=2</em><big>)</big><a class="headerlink" href="#stored_procedures.library.resetProcedures" title="Permalink to this definition">¶</a></dt>
+<dd><p>Resets all procedures registered with the library in the database.</p>
+</dd></dl>
+
+<dl class="function">
+<dt id="stored_procedures.library.reset">
+<tt class="descclassname">stored_procedures.library.</tt><tt class="descname">reset</tt><big>(</big><em>sender</em>, <em>**kwargs</em><big>)</big><a class="headerlink" href="#stored_procedures.library.reset" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</div>
+<div class="section" id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li><a class="reference internal" href="genindex.html"><em>Index</em></a></li>
+<li><a class="reference internal" href="py-modindex.html"><em>Module Index</em></a></li>
+<li><a class="reference internal" href="search.html"><em>Search Page</em></a></li>
+</ul>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="#">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Documentation of the Stored Procedures Module</a></li>
+<li><a class="reference internal" href="#raw-sql">Raw SQL</a><ul>
+<li><a class="reference internal" href="#before">Before</a></li>
+<li><a class="reference internal" href="#after">After</a></li>
+<li><a class="reference internal" href="#reference">Reference</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#stored-procedure">Stored Procedure</a><ul>
+<li><a class="reference internal" href="#a-small-example">A Small Example</a></li>
+<li><a class="reference internal" href="#features">Features</a><ul>
+<li><a class="reference internal" href="#using-model-names">Using Model Names</a></li>
+<li><a class="reference internal" href="#automatically-push-to-database">Automatically Push to Database</a></li>
+<li><a class="reference internal" href="#catching-exceptions-and-warnings">Catching Exceptions and Warnings</a></li>
+<li><a class="reference internal" href="#re-order-arguments">Re-order Arguments</a></li>
+<li><a class="reference internal" href="#automatically-infer-arguments">Automatically infer Arguments</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id1">Reference</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#exceptions">Exceptions</a></li>
+<li><a class="reference internal" href="#module-stored_procedures.library">Library</a></li>
+<li><a class="reference internal" href="#indices-and-tables">Indices and tables</a></li>
+</ul>
+
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/index.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" size="18" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="#">Stored Procedures v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2010, Jeroen Goudsmit.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.0b2.
+    </div>
+  </body>
+</html>

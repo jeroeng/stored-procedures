@@ -1,1 +1,4 @@
 *.pyc
+documentation/.doctrees
+documentation/.buildinfo
+documentation/build/doctrees
