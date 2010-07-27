@@ -93,7 +93,7 @@ The stored procedure that handles these orders is stored in the file 'placeOrder
     END;
 
 
-When one now execute the code::
+When one now executes the code::
 
     print Order.objects.placeOrder(product = "Tomato", orderedAmount = 10)
 
